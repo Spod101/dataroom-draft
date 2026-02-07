@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import {
   FolderIcon,
@@ -54,24 +55,6 @@ const data = {
       url: "/dataroom",
       icon: FolderIcon,
       isActive: true,
-      items: [
-        {
-          title: "All Files",
-          url: "/dataroom",
-        },
-        {
-          title: "Recent Activity",
-          url: "/dataroom/recent",
-        },
-        {
-          title: "Shared with Me",
-          url: "/dataroom/shared",
-        },
-        {
-          title: "Favorites",
-          url: "/dataroom/favorites",
-        },
-      ],
     },
     {
       title: "Permissions",
@@ -171,8 +154,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <Link href="/dataroom">
-                <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                  <FolderIcon className="size-4" />
+                <div className="flex aspect-square size-8 items-center justify-center">
+                  <Image
+                    src="/hsi-logo.png"
+                    alt="HSI Logo"
+                    width={32}
+                    height={32}
+                    className="object-contain"
+                  />
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">Data Room</span>
