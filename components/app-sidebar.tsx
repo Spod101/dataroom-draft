@@ -65,20 +65,6 @@ const data = {
       title: "Insights",
       url: "/insights",
       icon: BarChartIcon,
-      items: [
-        {
-          title: "Overview",
-          url: "/insights",
-        },
-        {
-          title: "Document Analytics",
-          url: "/insights/documents",
-        },
-        {
-          title: "User Activity",
-          url: "/insights/activity",
-        },
-      ],
     },
     {
       title: "Audit",
