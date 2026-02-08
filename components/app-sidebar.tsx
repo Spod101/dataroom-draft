@@ -60,20 +60,6 @@ const data = {
       title: "Permissions",
       url: "/permissions",
       icon: ShieldCheckIcon,
-      items: [
-        {
-          title: "User Access",
-          url: "/permissions",
-        },
-        {
-          title: "Groups",
-          url: "/permissions/groups",
-        },
-        {
-          title: "Access Requests",
-          url: "/permissions/requests",
-        },
-      ],
     },
     {
       title: "Insights",
