@@ -70,20 +70,6 @@ const data = {
       title: "Audit",
       url: "/audit",
       icon: ClipboardListIcon,
-      items: [
-        {
-          title: "Activity Log",
-          url: "/audit",
-        },
-        {
-          title: "Downloads",
-          url: "/audit/downloads",
-        },
-        {
-          title: "Access History",
-          url: "/audit/access",
-        },
-      ],
     },
   ],
   navSecondary: [
@@ -153,47 +139,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenu>
               {data.navMain.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  {item.items ? (
-                    <>
-                      <SidebarMenuButton
-                        onClick={() => toggleItem(item.title)}
-                        tooltip={item.title}
-                        isActive={isActive(item.url)}
-                      >
-                        {item.icon && <item.icon />}
-                        <span>{item.title}</span>
-                        <ChevronDownIcon
-                          className={`ml-auto transition-transform ${
-                            openItems.includes(item.title) ? "rotate-180" : ""
-                          }`}
-                        />
-                      </SidebarMenuButton>
-                      {openItems.includes(item.title) && (
-                        <SidebarMenuSub>
-                          {item.items.map((subItem) => (
-                            <SidebarMenuSubItem key={subItem.title}>
-                              <SidebarMenuSubButton asChild isActive={pathname === subItem.url}>
-                                <Link href={subItem.url}>
-                                  <span>{subItem.title}</span>
-                                </Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                          ))}
-                        </SidebarMenuSub>
-                      )}
-                    </>
-                  ) : (
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive(item.url)}
-                      tooltip={item.title}
-                    >
-                      <Link href={item.url}>
-                        {item.icon && <item.icon />}
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  )}
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive(item.url)}
+                    tooltip={item.title}
+                  >
+                    <Link href={item.url}>
+                      {item.icon && <item.icon />}
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>

@@ -1,3 +1,6 @@
+"use client"
+
+import * as React from "react"
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -6,91 +9,246 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { 
-  ClipboardListIcon, 
   DownloadIcon, 
-  EyeIcon, 
-  UploadIcon, 
-  TrashIcon,
-  ShareIcon,
   SearchIcon,
-  FilterIcon,
+  ChevronDownIcon,
 } from "lucide-react";
 
-export default function AuditPage() {
-  const auditLogs = [
-    {
-      id: 1,
-      user: "Alice Johnson",
-      action: "Downloaded",
-      document: "Investment Prospectus 2024.pdf",
-      timestamp: "2024-02-06 14:32:15",
-      ip: "192.168.1.105",
-      status: "success",
-      icon: DownloadIcon,
-    },
-    {
-      id: 2,
-      user: "Bob Smith",
-      action: "Viewed",
-      document: "Financial Statements Q4.xlsx",
-      timestamp: "2024-02-06 14:28:42",
-      ip: "192.168.1.112",
-      status: "success",
-      icon: EyeIcon,
-    },
-    {
-      id: 3,
-      user: "Carol White",
-      action: "Uploaded",
-      document: "Market Analysis Report.pdf",
-      timestamp: "2024-02-06 13:15:33",
-      ip: "192.168.1.98",
-      status: "success",
-      icon: UploadIcon,
-    },
-    {
-      id: 4,
-      user: "David Brown",
-      action: "Shared",
-      document: "Legal Framework Overview.docx",
-      timestamp: "2024-02-06 12:45:21",
-      ip: "192.168.1.87",
-      status: "success",
-      icon: ShareIcon,
-    },
-    {
-      id: 5,
-      user: "Eve Wilson",
-      action: "Deleted",
-      document: "Old Project Files.zip",
-      timestamp: "2024-02-06 11:20:15",
-      ip: "192.168.1.76",
-      status: "warning",
-      icon: TrashIcon,
-    },
-    {
-      id: 6,
-      user: "Frank Miller",
-      action: "Downloaded",
-      document: "Technical Architecture.pdf",
-      timestamp: "2024-02-06 10:55:08",
-      ip: "192.168.1.134",
-      status: "success",
-      icon: DownloadIcon,
-    },
-  ];
+// Members/Users data - same as permissions
+const members = [
+  { id: "1", name: "Emily Grace Thompson" },
+  { id: "2", name: "Oliver Michael Robinson" },
+  { id: "3", name: "Lucas Daniel Turner" },
+  { id: "4", name: "Ava Marie Martinez" },
+  { id: "5", name: "Sophia Olivia Hernandez" },
+  { id: "6", name: "Benjamin Alexander Davis" },
+];
 
-  const summary = [
-    { label: "Total Actions Today", value: "156" },
-    { label: "Unique Users", value: "23" },
-    { label: "Failed Attempts", value: "3" },
-    { label: "Downloads", value: "45" },
-  ];
+// Action types
+const actionTypes = [
+  { id: "all", name: "All" },
+  { id: "upload", name: "Upload" },
+  { id: "create", name: "Create" },
+  { id: "rename", name: "Rename" },
+  { id: "access", name: "Access" },
+  { id: "delete", name: "Delete" },
+  { id: "download", name: "Download" },
+];
+
+// Users who can be affected
+const usersAffected = [
+  { id: "all", name: "All" },
+  { id: "georges", name: "Georges Embolo" },
+  { id: "lucas", name: "Lucas Miller" },
+  { id: "noah", name: "Noah Smith" },
+  { id: "mia", name: "Mia Wilson" },
+  { id: "benjamin", name: "Benjamin Taylor" },
+  { id: "emma", name: "Emma Martinez" },
+];
+
+// Audit log data - matching data room files
+const auditLogs = [
+  {
+    id: 1,
+    date: "19/08/2022",
+    member: "Benjamin Alexander Davis",
+    action: "Upload",
+    description: 'Uploaded "Financialpromotion2023.pdf"',
+    userAffected: null,
+  },
+  {
+    id: 2,
+    date: "05/12/2023",
+    member: "Sophia Olivia Hernandez",
+    action: "Create",
+    description: 'Created Folder "Financial Promotion"',
+    userAffected: null,
+  },
+  {
+    id: 3,
+    date: "18/09/2023",
+    member: "Benjamin Alexander Davis",
+    action: "Rename",
+    description: 'Renamed Folder "HR" into "Human Resources"',
+    userAffected: null,
+  },
+  {
+    id: 4,
+    date: "22/07/2023",
+    member: "Emily Elizabeth Thompson",
+    action: "Access",
+    description: 'Give access to "report.pdf" to user Georges Embolo',
+    userAffected: "Georges Embolo",
+  },
+  {
+    id: 5,
+    date: "22/07/2023",
+    member: "Emily Elizabeth Thompson",
+    action: "Access",
+    description: 'Give access to "report.pdf" to user Lucas Miller',
+    userAffected: "Lucas Miller",
+  },
+  {
+    id: 6,
+    date: "22/07/2023",
+    member: "Emily Elizabeth Thompson",
+    action: "Access",
+    description: 'Give access to "report.pdf" to user Noah Smith',
+    userAffected: "Noah Smith",
+  },
+  {
+    id: 7,
+    date: "22/07/2023",
+    member: "Emily Elizabeth Thompson",
+    action: "Access",
+    description: 'Give access to "report.pdf" to user Mia Wilson',
+    userAffected: "Mia Wilson",
+  },
+  {
+    id: 8,
+    date: "22/07/2023",
+    member: "Emily Elizabeth Thompson",
+    action: "Access",
+    description: 'Give access to "report.pdf" to user Benjamin Taylor',
+    userAffected: "Benjamin Taylor",
+  },
+  {
+    id: 9,
+    date: "22/07/2023",
+    member: "Emily Elizabeth Thompson",
+    action: "Access",
+    description: 'Give access to "report.pdf" to user Emma Martinez',
+    userAffected: "Emma Martinez",
+  },
+  {
+    id: 10,
+    date: "29/06/2023",
+    member: "Sophia Olivia Hernandez",
+    action: "Create",
+    description: 'Created Folder "Financial Model"',
+    userAffected: null,
+  },
+  {
+    id: 11,
+    date: "29/06/2023",
+    member: "Sophia Olivia Hernandez",
+    action: "Create",
+    description: 'Created Folder "Industry Background"',
+    userAffected: null,
+  },
+  {
+    id: 12,
+    date: "29/06/2023",
+    member: "Sophia Olivia Hernandez",
+    action: "Create",
+    description: 'Created Folder "Presentation"',
+    userAffected: null,
+  },
+  {
+    id: 13,
+    date: "29/06/2023",
+    member: "Sophia Olivia Hernandez",
+    action: "Create",
+    description: 'Created Folder "Financial Information"',
+    userAffected: null,
+  },
+  {
+    id: 14,
+    date: "29/06/2023",
+    member: "Sophia Olivia Hernandez",
+    action: "Create",
+    description: 'Created Folder "Contracts"',
+    userAffected: null,
+  },
+  {
+    id: 15,
+    date: "28/06/2023",
+    member: "Benjamin Alexander Davis",
+    action: "Upload",
+    description: 'Uploaded "Company_Profile_2023.pdf"',
+    userAffected: null,
+  },
+  {
+    id: 16,
+    date: "28/06/2023",
+    member: "Benjamin Alexander Davis",
+    action: "Upload",
+    description: 'Uploaded "Product_Catalog.pdf"',
+    userAffected: null,
+  },
+  {
+    id: 17,
+    date: "27/06/2023",
+    member: "Oliver Michael Robinson",
+    action: "Download",
+    description: 'Downloaded "Long Version (PDF)"',
+    userAffected: null,
+  },
+  {
+    id: 18,
+    date: "27/06/2023",
+    member: "Lucas Daniel Turner",
+    action: "Download",
+    description: 'Downloaded "Deck (Presentation)"',
+    userAffected: null,
+  },
+];
+
+// Action badge styles
+const getActionStyle = (action: string) => {
+  switch (action.toLowerCase()) {
+    case "upload":
+      return "bg-blue-100 text-blue-700 border-blue-200";
+    case "create":
+      return "bg-green-100 text-green-700 border-green-200";
+    case "rename":
+      return "bg-orange-100 text-orange-700 border-orange-200";
+    case "access":
+      return "bg-purple-100 text-purple-700 border-purple-200";
+    case "delete":
+      return "bg-red-100 text-red-700 border-red-200";
+    case "download":
+      return "bg-cyan-100 text-cyan-700 border-cyan-200";
+    default:
+      return "bg-gray-100 text-gray-700 border-gray-200";
+  }
+};
+
+export default function AuditPage() {
+  const [searchTerm, setSearchTerm] = React.useState("");
+  const [memberFilter, setMemberFilter] = React.useState("all");
+  const [actionFilter, setActionFilter] = React.useState("all");
+  const [userAffectedFilter, setUserAffectedFilter] = React.useState("all");
+  const [dateRange, setDateRange] = React.useState("11/01/2019 - 11/01/2024");
+
+  // Filter logs based on selections
+  const filteredLogs = auditLogs.filter(log => {
+    const matchesSearch = searchTerm === "" || 
+      log.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.member.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesMember = memberFilter === "all" || 
+      log.member.toLowerCase().includes(memberFilter.toLowerCase());
+    
+    const matchesAction = actionFilter === "all" || 
+      log.action.toLowerCase() === actionFilter.toLowerCase();
+    
+    const matchesUserAffected = userAffectedFilter === "all" || 
+      (log.userAffected && log.userAffected.toLowerCase().includes(userAffectedFilter.toLowerCase()));
+
+    return matchesSearch && matchesMember && matchesAction && (userAffectedFilter === "all" || matchesUserAffected);
+  });
 
   return (
     <SidebarInset>
@@ -100,87 +258,144 @@ export default function AuditPage() {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbPage>Audit Log</BreadcrumbPage>
+              <BreadcrumbPage>Audit</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <div className="ml-auto flex items-center gap-2">
-          <Button variant="outline" size="sm">
-            <DownloadIcon className="mr-2 h-4 w-4" />
-            Export
-          </Button>
-        </div>
       </header>
       
       <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
-        <div className="grid gap-4 md:grid-cols-4">
-          {summary.map((item) => (
-            <Card key={item.label}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  {item.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{item.value}</div>
-              </CardContent>
-            </Card>
-          ))}
+        {/* Filters Row */}
+        <Card className="border-primary/20">
+          <CardContent className="p-4">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Members Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Members</span>
+                <Select value={memberFilter} onValueChange={setMemberFilter}>
+                  <SelectTrigger className="w-[120px] h-9">
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {members.map(member => (
+                      <SelectItem key={member.id} value={member.name}>
+                        {member.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Actions Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Actions</span>
+                <Select value={actionFilter} onValueChange={setActionFilter}>
+                  <SelectTrigger className="w-[120px] h-9">
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {actionTypes.map(action => (
+                      <SelectItem key={action.id} value={action.id}>
+                        {action.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Users Affected Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Users</span>
+                <Select value={userAffectedFilter} onValueChange={setUserAffectedFilter}>
+                  <SelectTrigger className="w-[120px] h-9">
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {usersAffected.map(user => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Period Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Period</span>
+                <Button variant="outline" size="sm" className="h-9 gap-2">
+                  {dateRange}
+                  <ChevronDownIcon className="h-4 w-4" />
+                </Button>
+              </div>
+
+              {/* Download Button */}
+              <div className="ml-auto">
+                <Button className="bg-primary hover:bg-primary/90 gap-2">
+                  <DownloadIcon className="h-4 w-4" />
+                  Download
+                  <ChevronDownIcon className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Search Bar */}
+        <div className="bg-background rounded-xl border border-primary/20 shadow-sm p-3 hover:border-primary/40 transition-colors">
+          <div className="relative">
+            <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary/60" />
+            <Input
+              type="search"
+              placeholder="Search audit logs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 h-9 border-0 focus-visible:ring-0 focus-visible:ring-primary/20 shadow-none bg-transparent placeholder:text-muted-foreground"
+            />
+          </div>
         </div>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Activity Log</CardTitle>
-                <CardDescription>Complete audit trail of all actions</CardDescription>
-              </div>
-              <Button variant="outline" size="sm">
-                <FilterIcon className="mr-2 h-4 w-4" />
-                Filters
-              </Button>
-            </div>
-          </CardHeader>
+        {/* Audit Table */}
+        <Card className="border-primary/20 flex-1">
           <CardContent className="p-0">
-            <div className="px-6 py-4 border-b">
-              <div className="relative">
-                <SearchIcon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="search"
-                  placeholder="Search audit logs..."
-                  className="pl-8"
-                />
-              </div>
+            {/* Table Header */}
+            <div className="grid grid-cols-[100px_1fr_100px_1fr_150px] gap-4 px-6 py-3 border-b bg-muted/30 text-sm text-muted-foreground">
+              <div>Date</div>
+              <div>Member</div>
+              <div>Action</div>
+              <div>Description</div>
+              <div>User Affected</div>
             </div>
+
+            {/* Table Body */}
             <div className="divide-y">
-              {auditLogs.map((log) => (
-                <div
-                  key={log.id}
-                  className="flex items-center justify-between p-4 hover:bg-accent transition-colors"
+              {filteredLogs.map((log) => (
+                <div 
+                  key={log.id} 
+                  className="grid grid-cols-[100px_1fr_100px_1fr_150px] gap-4 px-6 py-4 hover:bg-accent/50 transition-colors items-center"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-full ${
-                      log.status === "warning" ? "bg-yellow-500/10" : "bg-primary/10"
-                    }`}>
-                      <log.icon className={`h-4 w-4 ${
-                        log.status === "warning" ? "text-yellow-500" : "text-primary"
-                      }`} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium">
-                        {log.user} {log.action.toLowerCase()} <span className="text-muted-foreground">{log.document}</span>
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {log.timestamp} • IP: {log.ip}
-                      </p>
-                    </div>
+                  <div className="text-sm text-muted-foreground">{log.date}</div>
+                  <div className="text-sm font-medium">{log.member}</div>
+                  <div>
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getActionStyle(log.action)}`}>
+                      {log.action}
+                    </span>
                   </div>
-                  <Badge variant={log.status === "warning" ? "destructive" : "default"}>
-                    {log.status}
-                  </Badge>
+                  <div className="text-sm">{log.description}</div>
+                  <div className="text-sm text-primary">
+                    {log.userAffected || <span className="text-muted-foreground">none</span>}
+                  </div>
                 </div>
               ))}
             </div>
+
+            {/* Empty State */}
+            {filteredLogs.length === 0 && (
+              <div className="flex items-center justify-center py-12 text-muted-foreground">
+                No audit logs found matching your filters.
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
