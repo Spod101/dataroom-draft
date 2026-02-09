@@ -30,6 +30,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { DataRoomNav, AddNavigationButton } from "@/components/dataroom/data-room-nav"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -115,12 +116,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       
       <SidebarContent>
-        {/* Main Navigation */}
+        {/* Data Room folder tree */}
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel>Data Room</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <DataRoomNav />
+            <div className="mt-1 px-2 flex justify-start group-data-[collapsible=icon]:justify-center">
+              <AddNavigationButton />
+            </div>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        {/* Rest of navigation */}
+        <SidebarGroup>
+          <SidebarGroupLabel>Others</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {data.navMain.map((item) => (
+              {data.navMain.filter((item) => item.title !== "Data Room").map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild

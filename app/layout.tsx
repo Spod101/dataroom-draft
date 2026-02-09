@@ -4,6 +4,7 @@ import "./globals.css";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
+import { DataRoomProvider } from "@/contexts/dataroom-context";
 import { AppSidebar } from "@/components/app-sidebar";
 
 const roboto = Roboto({subsets:['latin'],variable:'--font-sans'});
@@ -35,10 +36,12 @@ export default function RootLayout({
       >
         <ThemeProvider defaultTheme="light" storageKey="dataroom-theme">
           <TooltipProvider>
-            <SidebarProvider>
-              <AppSidebar />
-              {children}
-            </SidebarProvider>
+            <DataRoomProvider>
+              <SidebarProvider>
+                <AppSidebar />
+                {children}
+              </SidebarProvider>
+            </DataRoomProvider>
           </TooltipProvider>
         </ThemeProvider>
       </body>
