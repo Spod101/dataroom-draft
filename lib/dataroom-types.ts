@@ -1,0 +1,56 @@
+/** Path = array of slugs: [] = root, [folder] = first level, [folder, subfolder] = second, [folder, subfolder, industry] = third */
+export type DataRoomPath = string[];
+
+export type DataRoomFile = {
+  id: string;
+  name: string;
+  type: "file" | "link";
+  size?: string;
+  modified: string;
+  modifiedBy: string;
+  sharing: string;
+  mimeType?: string;
+  description?: string;
+};
+
+export type DataRoomFolder = {
+  id: string;
+  name: string;
+  slug: string;
+  icon?: string;
+  description?: string;
+  modified: string;
+  modifiedBy: string;
+  sharing: string;
+  children: DataRoomItem[];
+};
+
+export type DataRoomItem = DataRoomFile | DataRoomFolder;
+
+export function isFolder(item: DataRoomItem): item is DataRoomFolder {
+  return "children" in item && Array.isArray((item as DataRoomFolder).children);
+}
+
+export function isFile(item: DataRoomItem): item is DataRoomFile {
+  return "type" in item && ((item as DataRoomFile).type === "file" || (item as DataRoomFile).type === "link");
+}
+
+function uid() {
+  return `dr-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export function slugFromName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+export function uniqueSlug(slug: string, existing: string[]): string {
+  if (!existing.includes(slug)) return slug;
+  let n = 1;
+  while (existing.includes(`${slug}-${n}`)) n++;
+  return `${slug}-${n}`;
+}
+
+export { uid };

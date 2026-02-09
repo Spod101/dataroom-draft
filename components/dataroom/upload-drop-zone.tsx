@@ -1,0 +1,137 @@
+"use client";
+
+import * as React from "react";
+import { UploadIcon } from "lucide-react";
+import type { DataRoomFile } from "@/lib/dataroom-types";
+import { uid } from "@/lib/dataroom-types";
+
+const ACCEPT = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "image/*",
+  "video/*",
+].join(",");
+
+function formatDate() {
+  const d = new Date();
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (d.toDateString() === today.toDateString())
+    return "Today at " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  if (d.toDateString() === yesterday.toDateString())
+    return "Yesterday at " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  return d.toLocaleDateString() + " " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+
+function fileToDataRoomFile(f: File): DataRoomFile {
+  const ext = f.name.split(".").pop() ?? "";
+  const sizeStr = f.size < 1024 ? f.size + " B" : f.size < 1024 * 1024 ? (f.size / 1024).toFixed(1) + " KB" : (f.size / (1024 * 1024)).toFixed(1) + " MB";
+  return {
+    id: uid(),
+    name: f.name,
+    type: "file",
+    size: sizeStr,
+    modified: formatDate(),
+    modifiedBy: "You",
+    sharing: "Shared",
+    mimeType: f.type,
+  };
+}
+
+interface UploadDropZoneProps {
+  onFiles: (files: DataRoomFile[]) => void;
+  onReplaceWarning?: (name: string, files: DataRoomFile[], resolve: (ok: boolean) => void) => void;
+  existingNames?: Set<string>;
+  className?: string;
+  children?: React.ReactNode;
+}
+
+export function UploadDropZone({
+  onFiles,
+  onReplaceWarning,
+  existingNames = new Set(),
+  className,
+  children,
+}: UploadDropZoneProps) {
+  const [drag, setDrag] = React.useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  const mapFiles = (fileList: FileList | null): DataRoomFile[] => {
+    if (!fileList?.length) return [];
+    return Array.from(fileList).map(fileToDataRoomFile);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDrag(false);
+    const files = mapFiles(e.dataTransfer.files);
+    if (files.length === 0) return;
+    const toReplace = files.filter((f) => existingNames.has(f.name));
+    if (toReplace.length > 0 && onReplaceWarning) {
+      onReplaceWarning(toReplace[0].name, files, (ok) => {
+        if (ok) onFiles(files);
+      });
+    } else {
+      onFiles(files);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = mapFiles(e.target.files);
+    e.target.value = "";
+    if (files.length === 0) return;
+    const toReplace = files.filter((f) => existingNames.has(f.name));
+    if (toReplace.length > 0 && onReplaceWarning) {
+      onReplaceWarning(toReplace[0].name, files, (ok) => {
+        if (ok) onFiles(files);
+      });
+    } else {
+      onFiles(files);
+    }
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={className}
+      onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+      onDragLeave={() => setDrag(false)}
+      onDrop={handleDrop}
+      onClick={() => inputRef.current?.click()}
+      onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept={ACCEPT}
+        className="hidden"
+        onChange={handleChange}
+      />
+      {children ?? (
+        <div
+          className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 w-full min-h-[160px] transition-colors cursor-pointer ${
+            drag
+              ? "border-primary bg-primary/10"
+              : "border-primary/40 bg-primary/5 hover:border-primary/60 hover:bg-primary/10"
+          }`}
+        >
+          <UploadIcon className="h-10 w-10 text-primary" />
+          <span className="text-sm font-medium text-primary">
+            Drop files here or click to upload
+          </span>
+          <span className="text-xs text-muted-foreground">
+            PDF, Word, Excel, PPT, images, videos
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}

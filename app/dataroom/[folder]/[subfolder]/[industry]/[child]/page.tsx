@@ -26,7 +26,6 @@ import { downloadFile } from "@/lib/dataroom-download";
 import {
   isFolder,
   isFile,
-  type DataRoomFolder,
   type DataRoomFile,
   type DataRoomItem,
 } from "@/lib/dataroom-types";
@@ -62,13 +61,22 @@ function getItemIcon(item: DataRoomItem, size: "sm" | "lg" = "lg") {
   return <FileTextIcon className={`${sizeClass} text-muted-foreground`} />;
 }
 
-export default function FolderPage() {
+export default function IndustryChildPage() {
   const router = useRouter();
   const params = useParams();
   const folderSlug = params.folder as string;
-  const path = React.useMemo(() => [folderSlug], [folderSlug]);
+  const subfolderSlug = params.subfolder as string;
+  const industrySlug = params.industry as string;
+  const childSlug = params.child as string;
+  const path = React.useMemo(
+    () => [folderSlug, subfolderSlug, industrySlug, childSlug],
+    [folderSlug, subfolderSlug, industrySlug, childSlug]
+  );
 
   const { getChildren, getFolder, addFiles, renameItem, deleteItem } = useDataRoom();
+  const parentFolder = getFolder([folderSlug]);
+  const subfolder = getFolder([folderSlug, subfolderSlug]);
+  const industryFolder = getFolder([folderSlug, subfolderSlug, industrySlug]);
   const folder = getFolder(path);
   const children = getChildren(path);
 
@@ -123,8 +131,10 @@ export default function FolderPage() {
   const openShare = (item: DataRoomItem) => {
     ignoreNextRowClickRef.current = true;
     const base = typeof window !== "undefined" ? window.location.origin : "";
-    if (isFolder(item)) setShareLink(`${base}/dataroom/${folderSlug}/${item.slug}`);
-    else setShareLink(`${base}/dataroom/${folderSlug}?file=${item.id}`);
+    if (isFolder(item))
+      setShareLink(`${base}/dataroom/${folderSlug}/${subfolderSlug}/${industrySlug}/${childSlug}/${item.slug}`);
+    else
+      setShareLink(`${base}/dataroom/${folderSlug}/${subfolderSlug}/${industrySlug}/${childSlug}?file=${item.id}`);
     setShareOpen(true);
   };
 
@@ -173,7 +183,8 @@ export default function FolderPage() {
   }
 
   const navigateTo = (item: DataRoomItem) => {
-    if (isFolder(item)) router.push(`/dataroom/${folderSlug}/${item.slug}`);
+    if (isFolder(item))
+      router.push(`/dataroom/${folderSlug}/${subfolderSlug}/${industrySlug}/${childSlug}/${item.slug}`);
   };
 
   return (
@@ -190,6 +201,26 @@ export default function FolderPage() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href={`/dataroom/${folderSlug}`}>{parentFolder?.name ?? folderSlug}</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href={`/dataroom/${folderSlug}/${subfolderSlug}`}>{subfolder?.name ?? subfolderSlug}</Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink asChild>
+                <Link href={`/dataroom/${folderSlug}/${subfolderSlug}/${industrySlug}`}>
+                  {industryFolder?.name ?? industrySlug}
+                </Link>
+              </BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
               <BreadcrumbPage>{folder.name}</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
@@ -201,13 +232,8 @@ export default function FolderPage() {
       </div>
 
       <div className="flex flex-1 flex-col p-6 gap-4">
-        <DataRoomControls
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          onDownload={() => {}}
-        />
+        <DataRoomControls viewMode={viewMode} onViewModeChange={setViewMode} onDownload={() => {}} />
 
-        {/* Upload drop zone */}
         <UploadDropZone
           onFiles={handleUpload}
           onReplaceWarning={handleOverwriteWarning}
@@ -253,9 +279,7 @@ export default function FolderPage() {
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-3">
                           {getItemIcon(item, "sm")}
-                          <span className="group-hover:text-primary transition-colors">
-                            {item.name}
-                          </span>
+                          <span className="group-hover:text-primary transition-colors">{item.name}</span>
                         </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">{item.modified}</TableCell>
@@ -286,7 +310,7 @@ export default function FolderPage() {
                               onSelect={(e) => { e.preventDefault(); openRename(item); }}
                             >
                               <PencilIcon className="h-4 w-4 mr-2" />
-                              {isFile(item) && item.type === "link" ? "Edit Link" : "Rename"}
+                              Rename
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
@@ -320,127 +344,76 @@ export default function FolderPage() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {children.map((item) =>
-                isFolder(item) ? (
-                  <Card
-                    key={item.id}
-                    className="group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full"
-                    onClick={() => {
-                      if (ignoreNextRowClickRef.current) {
-                        ignoreNextRowClickRef.current = false;
-                        return;
-                      }
-                      navigateTo(item);
-                    }}
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <CardContent className="p-6 h-full flex flex-col relative">
-                      <div className="flex items-start justify-between mb-4">
-                        {getItemIcon(item)}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
-                            >
-                              <MoreVerticalIcon className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openRename(item); }}
-                            >
-                              <PencilIcon className="h-4 w-4 mr-2" />
-                              Rename
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openShare(item); }}
-                            >
-                              <LinkIconLucide className="h-4 w-4 mr-2" />
-                              Copy Link
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-destructive/10 focus:text-destructive"
-                              onSelect={(e) => { e.preventDefault(); openDelete(item); }}
-                            >
-                              <TrashIcon className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                      <div className="mt-auto">
-                        <h3 className="font-semibold text-base mb-2 group-hover:text-primary transition-colors">
-                          {item.name}
-                        </h3>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <Card
-                    key={item.id}
-                    className="group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <CardContent className="p-6 h-full flex flex-col relative">
-                      <div className="flex items-start justify-between mb-4">
-                        {getItemIcon(item)}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
-                            >
-                              <MoreVerticalIcon className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openRename(item); }}
-                            >
-                              <PencilIcon className="h-4 w-4 mr-2" />
-                              Rename
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openShare(item); }}
-                            >
-                              <LinkIconLucide className="h-4 w-4 mr-2" />
-                              Copy Link
-                            </DropdownMenuItem>
+              {children.map((item) => (
+                <Card
+                  key={item.id}
+                  className="group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full"
+                  onClick={() => {
+                    if (ignoreNextRowClickRef.current) {
+                      ignoreNextRowClickRef.current = false;
+                      return;
+                    }
+                    navigateTo(item);
+                  }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <CardContent className="p-6 h-full flex flex-col relative">
+                    <div className="flex items-start justify-between mb-4">
+                      {getItemIcon(item)}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
+                          >
+                            <MoreVerticalIcon className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            className="focus:bg-primary/10 focus:text-primary"
+                            onSelect={(e) => { e.preventDefault(); openRename(item); }}
+                          >
+                            <PencilIcon className="h-4 w-4 mr-2" />
+                            Rename
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="focus:bg-primary/10 focus:text-primary"
+                            onSelect={(e) => { e.preventDefault(); openShare(item); }}
+                          >
+                            <LinkIconLucide className="h-4 w-4 mr-2" />
+                            Copy Link
+                          </DropdownMenuItem>
+                          {isFile(item) && (
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
                               onSelect={(e) => { e.preventDefault(); handleDownload(item); }}
                             >
                               Download
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-destructive/10 focus:text-destructive"
-                              onSelect={(e) => { e.preventDefault(); openDelete(item); }}
-                            >
-                              <TrashIcon className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                      <div className="mt-auto">
-                        <h3 className="font-semibold text-base mb-1 group-hover:text-primary transition-colors">
-                          {item.name}
-                        </h3>
-                        {item.description && (
-                          <p className="text-xs text-muted-foreground">{item.description}</p>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              )}
+                          )}
+                          <DropdownMenuItem
+                            className="focus:bg-destructive/10 focus:text-destructive"
+                            onSelect={(e) => { e.preventDefault(); openDelete(item); }}
+                          >
+                            <TrashIcon className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                    <div className="mt-auto">
+                      <h3 className="font-semibold text-base mb-2 group-hover:text-primary transition-colors">
+                        {item.name}
+                      </h3>
+                      {isFile(item) && item.description && (
+                        <p className="text-xs text-muted-foreground">{item.description}</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
         </div>
