@@ -33,6 +33,7 @@ import {
   type DataRoomFile,
   type DataRoomItem,
 } from "@/lib/dataroom-types";
+import { FilePreviewModal } from "@/components/dataroom/file-preview-modal";
 import {
   MoreVerticalIcon,
   PencilIcon,
@@ -96,6 +97,8 @@ export default function FolderPage() {
   const [moveTargetPath, setMoveTargetPath] = React.useState<DataRoomPath | null>(null);
   const [moveTargetLabel, setMoveTargetLabel] = React.useState("");
   const [uploadDialogOpen, setUploadDialogOpen] = React.useState(false);
+  const [previewFile, setPreviewFile] = React.useState<DataRoomFile | null>(null);
+  const [previewOpen, setPreviewOpen] = React.useState(false);
 
   const existingFileNames = React.useMemo(
     () => new Set(children.filter(isFile).map((f) => f.name)),
@@ -211,7 +214,18 @@ export default function FolderPage() {
   }
 
   const navigateTo = (item: DataRoomItem) => {
-    if (isFolder(item)) router.push(`/dataroom/${folderSlug}/${item.slug}`);
+    if (isFolder(item)) {
+      router.push(`/dataroom/${folderSlug}/${item.slug}`);
+    } else if (isFile(item)) {
+      setPreviewFile(item);
+      setPreviewOpen(true);
+    }
+  };
+
+  const openPreview = (file: DataRoomFile) => {
+    ignoreNextRowClickRef.current = true;
+    setPreviewFile(file);
+    setPreviewOpen(true);
   };
 
   return (
@@ -342,12 +356,20 @@ export default function FolderPage() {
                               Move to...
                             </DropdownMenuItem>
                             {isFile(item) && (
-                              <DropdownMenuItem
-                                className="focus:bg-primary/10 focus:text-primary"
-                                onSelect={(e) => { e.preventDefault(); handleDownload(item); }}
-                              >
-                                Download
-                              </DropdownMenuItem>
+                              <>
+                                <DropdownMenuItem
+                                  className="focus:bg-primary/10 focus:text-primary"
+                                  onSelect={(e) => { e.preventDefault(); openPreview(item); }}
+                                >
+                                  Preview
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="focus:bg-primary/10 focus:text-primary"
+                                  onSelect={(e) => { e.preventDefault(); handleDownload(item); }}
+                                >
+                                  Download
+                                </DropdownMenuItem>
+                              </>
                             )}
                             <DropdownMenuItem
                               className="focus:bg-destructive/10 focus:text-destructive"
@@ -473,12 +495,22 @@ export default function FolderPage() {
                               <FolderIcon className="h-4 w-4 mr-2" />
                               Move to...
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); handleDownload(item); }}
-                            >
-                              Download
-                            </DropdownMenuItem>
+                            {isFile(item) && (
+                              <>
+                                <DropdownMenuItem
+                                  className="focus:bg-primary/10 focus:text-primary"
+                                  onSelect={(e) => { e.preventDefault(); openPreview(item); }}
+                                >
+                                  Preview
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="focus:bg-primary/10 focus:text-primary"
+                                  onSelect={(e) => { e.preventDefault(); handleDownload(item); }}
+                                >
+                                  Download
+                                </DropdownMenuItem>
+                              </>
+                            )}
                             <DropdownMenuItem
                               className="focus:bg-destructive/10 focus:text-destructive"
                               onSelect={(e) => { e.preventDefault(); openDelete(item); }}
@@ -578,6 +610,8 @@ export default function FolderPage() {
           onSelect={handleMoveSelect}
         />
       )}
+
+      <FilePreviewModal file={previewFile} open={previewOpen} onOpenChange={setPreviewOpen} />
 
       <ConfirmDialog
         open={moveConfirmOpen}

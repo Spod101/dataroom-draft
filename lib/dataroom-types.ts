@@ -11,6 +11,7 @@ export type DataRoomFile = {
   sharing: string;
   mimeType?: string;
   description?: string;
+  url?: string;
 };
 
 export type DataRoomFolder = {
