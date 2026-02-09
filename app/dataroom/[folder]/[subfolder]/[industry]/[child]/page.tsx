@@ -24,7 +24,7 @@ import { InputDialog } from "@/components/dataroom/input-dialog";
 import { MoveToFolderModal } from "@/components/dataroom/move-to-folder-modal";
 import { NewDropdown } from "@/components/dataroom/new-dropdown";
 import { UploadFilesDialog } from "@/components/dataroom/upload-files-dialog";
-import { downloadFile } from "@/lib/dataroom-download";
+import { downloadFile, downloadFolderZip } from "@/lib/dataroom-download";
 import {
   isFolder,
   isFile,
@@ -77,7 +77,8 @@ export default function IndustryChildPage() {
     [folderSlug, subfolderSlug, industrySlug, childSlug]
   );
 
-  const { getChildren, getFolder, addFolder, addFiles, renameItem, deleteItem, moveItem } = useDataRoom();
+  const { getChildren, getFolder, addFolder, addFiles, renameItem, deleteItem, moveItem, setSharing } =
+    useDataRoom();
   const parentFolder = getFolder([folderSlug]);
   const subfolder = getFolder([folderSlug, subfolderSlug]);
   const industryFolder = getFolder([folderSlug, subfolderSlug, industrySlug]);
@@ -94,6 +95,8 @@ export default function IndustryChildPage() {
   const [deleteName, setDeleteName] = React.useState("");
   const [shareOpen, setShareOpen] = React.useState(false);
   const [shareLink, setShareLink] = React.useState("");
+  const [shareAccess, setShareAccess] = React.useState<"view" | "edit">("view");
+  const [shareItem, setShareItem] = React.useState<DataRoomItem | null>(null);
   const [overwriteOpen, setOverwriteOpen] = React.useState(false);
   const [overwriteName, setOverwriteName] = React.useState("");
   const [overwriteResolve, setOverwriteResolve] = React.useState<((ok: boolean) => void) | null>(null);
@@ -141,6 +144,14 @@ export default function IndustryChildPage() {
     setDeleteOpen(true);
   };
 
+  const sharingToAccess = (sharing: string | undefined): "view" | "download" | "edit" => {
+    if (!sharing) return "view";
+    const s = sharing.toLowerCase();
+    if (s.includes("edit")) return "edit";
+    if (s.includes("download")) return "download";
+    return "view";
+  };
+
   const openShare = (item: DataRoomItem) => {
     ignoreNextRowClickRef.current = true;
     const base = typeof window !== "undefined" ? window.location.origin : "";
@@ -148,7 +159,21 @@ export default function IndustryChildPage() {
       setShareLink(`${base}/dataroom/${folderSlug}/${subfolderSlug}/${industrySlug}/${childSlug}/${item.slug}`);
     else
       setShareLink(`${base}/dataroom/${folderSlug}/${subfolderSlug}/${industrySlug}/${childSlug}?file=${item.id}`);
+    setShareItem(item);
+    // sharing is common on both folders and files
+    // @ts-ignore
+    setShareAccess(sharingToAccess(item.sharing));
     setShareOpen(true);
+  };
+
+  const handleShareAccessChange = (access: "view" | "edit") => {
+    setShareAccess(access);
+    if (!shareItem) return;
+    const label =
+      access === "edit"
+        ? "Anyone with link (edit)"
+        : "Anyone with link (view)";
+    setSharing(path, shareItem.id, label);
   };
 
   const handleDownload = (file: DataRoomFile) => {
@@ -183,6 +208,11 @@ export default function IndustryChildPage() {
     setOverwriteOpen(false);
     setOverwriteResolve(null);
     setPendingUploadFiles([]);
+  };
+
+  const handleFolderDownload = () => {
+    const name = folder?.name ?? childSlug ?? "Folder";
+    downloadFolderZip(name);
   };
 
   const handleNewFolder = (name: string) => {
@@ -290,7 +320,11 @@ export default function IndustryChildPage() {
             onFolderUpload={() => setUploadDialogOpen(true)}
           />
           <div className="flex-1 min-w-[200px]">
-            <DataRoomControls viewMode={viewMode} onViewModeChange={setViewMode} onDownload={() => {}} />
+            <DataRoomControls
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              onDownload={handleFolderDownload}
+            />
           </div>
         </div>
 
@@ -562,7 +596,14 @@ export default function IndustryChildPage() {
         onConfirm={confirmOverwrite}
       />
 
-      <ShareLinkModal open={shareOpen} onOpenChange={setShareOpen} link={shareLink} title="Share link" />
+      <ShareLinkModal
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        link={shareLink}
+        title="Share link"
+        access={shareAccess}
+        onAccessChange={handleShareAccessChange}
+      />
 
       {moveItemObj && (
         <MoveToFolderModal

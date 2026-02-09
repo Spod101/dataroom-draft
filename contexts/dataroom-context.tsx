@@ -84,6 +84,7 @@ type Action =
   | { type: "DELETE"; path: DataRoomPath; itemId: string }
   | { type: "REPLACE_FILE"; path: DataRoomPath; fileId: string; file: DataRoomFile }
   | { type: "MOVE_ITEM"; sourcePath: DataRoomPath; itemId: string; targetPath: DataRoomPath }
+  | { type: "SET_SHARING"; path: DataRoomPath; itemId: string; sharing: string }
   | { type: "RESET" };
 
 function reducer(state: DataRoomState, action: Action): DataRoomState {
@@ -199,6 +200,17 @@ function reducer(state: DataRoomState, action: Action): DataRoomState {
       next = setChildrenAtPath(next, action.targetPath, newTargetChildren);
       return { rootFolders: next };
     }
+    case "SET_SHARING": {
+      const children = getChildrenAtPath(state.rootFolders, action.path);
+      const newChildren = children.map((c) =>
+        c.id === action.itemId
+          ? { ...c, sharing: action.sharing, modified: now, modifiedBy }
+          : c
+      );
+      return {
+        rootFolders: setChildrenAtPath(state.rootFolders, action.path, newChildren),
+      };
+    }
     default:
       return state;
   }
@@ -230,6 +242,7 @@ type DataRoomContextValue = {
   deleteItem: (path: DataRoomPath, itemId: string) => void;
   replaceFile: (path: DataRoomPath, fileId: string, file: DataRoomFile) => void;
   moveItem: (sourcePath: DataRoomPath, itemId: string, targetPath: DataRoomPath) => void;
+  setSharing: (path: DataRoomPath, itemId: string, sharing: string) => void;
 };
 
 const DataRoomContext = React.createContext<DataRoomContextValue | null>(null);
@@ -277,6 +290,11 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: "MOVE_ITEM", sourcePath, itemId, targetPath }),
     []
   );
+  const setSharing = React.useCallback(
+    (path: DataRoomPath, itemId: string, sharing: string) =>
+      dispatch({ type: "SET_SHARING", path, itemId, sharing }),
+    []
+  );
 
   const value: DataRoomContextValue = {
     state,
@@ -288,6 +306,7 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     deleteItem,
     replaceFile,
     moveItem,
+    setSharing,
   };
 
   return (

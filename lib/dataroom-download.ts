@@ -13,3 +13,20 @@ export function downloadFile(name: string, mimeType?: string) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+/** Mock download of a whole folder as a ZIP archive */
+export function downloadFolderZip(folderName: string) {
+  const safeName = folderName && folderName.trim().length > 0 ? folderName.trim() : "folder";
+  const content = `Mock ZIP archive for folder "${safeName}". This is temporary data - real ZIP would be generated on the server.`;
+  const blob = new Blob([content], {
+    type: "application/zip",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${safeName}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}

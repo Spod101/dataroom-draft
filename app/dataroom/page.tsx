@@ -29,6 +29,7 @@ import { ShareLinkModal } from "@/components/dataroom/share-link-modal";
 import { InputDialog } from "@/components/dataroom/input-dialog";
 import { MoveToFolderModal } from "@/components/dataroom/move-to-folder-modal";
 import { isFolder, type DataRoomPath, type DataRoomFolder, type DataRoomItem } from "@/lib/dataroom-types";
+import { downloadFolderZip } from "@/lib/dataroom-download";
 import {
   PlusIcon,
   MoreVerticalIcon,
@@ -49,7 +50,7 @@ const ROOT_PATH: string[] = [];
 
 export default function DataRoomPage() {
   const router = useRouter();
-  const { getChildren, getFolder, addFolder, renameItem, deleteItem, moveItem } = useDataRoom();
+  const { getChildren, getFolder, addFolder, renameItem, deleteItem, moveItem, setSharing } = useDataRoom();
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
   const ignoreNextRowClickRef = React.useRef(false);
 
@@ -62,6 +63,8 @@ export default function DataRoomPage() {
   const [deleteName, setDeleteName] = React.useState("");
   const [shareOpen, setShareOpen] = React.useState(false);
   const [shareLink, setShareLink] = React.useState("");
+  const [shareAccess, setShareAccess] = React.useState<"view" | "edit">("view");
+  const [shareItem, setShareItem] = React.useState<DataRoomItem | null>(null);
   const [moveOpen, setMoveOpen] = React.useState(false);
   const [moveItemObj, setMoveItemObj] = React.useState<DataRoomItem | null>(null);
   const [moveConfirmOpen, setMoveConfirmOpen] = React.useState(false);
@@ -103,15 +106,39 @@ export default function DataRoomPage() {
     setDeleteItemId(null);
   };
 
+  const sharingToAccess = (sharing: string | undefined): "view" | "edit" => {
+    if (!sharing) return "view";
+    const s = sharing.toLowerCase();
+    if (s.includes("edit")) return "edit";
+    if (s.includes("download")) return "download";
+    return "view";
+  };
+
   const openShare = (folder: DataRoomFolder) => {
     ignoreNextRowClickRef.current = true;
-    const path = typeof window !== "undefined" ? window.location.origin : "";
-    setShareLink(`${path}/dataroom/${folder.slug}`);
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    setShareLink(`${origin}/dataroom/${folder.slug}`);
+    setShareItem(folder);
+    setShareAccess(sharingToAccess(folder.sharing ?? ""));
     setShareOpen(true);
   };
 
   const itemsCount = (folder: DataRoomFolder) =>
     folder.children.length > 0 ? `${folder.children.length} items` : "0 items";
+
+  const handleShareAccessChange = (access: "view" | "edit") => {
+    setShareAccess(access);
+    if (!shareItem) return;
+    const label =
+      access === "edit"
+        ? "Anyone with link (edit)"
+        : "Anyone with link (view)";
+    setSharing(ROOT_PATH, shareItem.id, label);
+  };
+
+  const handleRootDownload = () => {
+    downloadFolderZip("Data Room");
+  };
 
   const openMove = (item: DataRoomItem) => {
     ignoreNextRowClickRef.current = true;
@@ -165,7 +192,7 @@ export default function DataRoomPage() {
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           searchPlaceholder="Search file or folder"
-          onDownload={() => {}}
+          onDownload={handleRootDownload}
         />
 
         <div className="flex-1">
@@ -398,6 +425,8 @@ export default function DataRoomPage() {
         onOpenChange={setShareOpen}
         link={shareLink}
         title="Share link"
+        access={shareAccess}
+        onAccessChange={handleShareAccessChange}
       />
 
       {moveItemObj && (

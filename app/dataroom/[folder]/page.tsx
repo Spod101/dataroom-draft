@@ -24,7 +24,7 @@ import { InputDialog } from "@/components/dataroom/input-dialog";
 import { MoveToFolderModal } from "@/components/dataroom/move-to-folder-modal";
 import { NewDropdown } from "@/components/dataroom/new-dropdown";
 import { UploadFilesDialog } from "@/components/dataroom/upload-files-dialog";
-import { downloadFile } from "@/lib/dataroom-download";
+import { downloadFile, downloadFolderZip } from "@/lib/dataroom-download";
 import {
   isFolder,
   isFile,
@@ -72,7 +72,8 @@ export default function FolderPage() {
   const folderSlug = params.folder as string;
   const path = React.useMemo(() => [folderSlug], [folderSlug]);
 
-  const { getChildren, getFolder, addFolder, addFiles, renameItem, deleteItem, moveItem } = useDataRoom();
+  const { getChildren, getFolder, addFolder, addFiles, renameItem, deleteItem, moveItem, setSharing } =
+    useDataRoom();
   const folder = getFolder(path);
   const children = getChildren(path);
 
@@ -86,6 +87,8 @@ export default function FolderPage() {
   const [deleteName, setDeleteName] = React.useState("");
   const [shareOpen, setShareOpen] = React.useState(false);
   const [shareLink, setShareLink] = React.useState("");
+  const [shareAccess, setShareAccess] = React.useState<"view" | "edit">("view");
+  const [shareItem, setShareItem] = React.useState<DataRoomItem | null>(null);
   const [overwriteOpen, setOverwriteOpen] = React.useState(false);
   const [overwriteName, setOverwriteName] = React.useState("");
   const [overwriteResolve, setOverwriteResolve] = React.useState<((ok: boolean) => void) | null>(null);
@@ -133,12 +136,32 @@ export default function FolderPage() {
     setDeleteOpen(true);
   };
 
+  const sharingToAccess = (sharing: string | undefined): "view" | "edit" => {
+    if (!sharing) return "view";
+    const s = sharing.toLowerCase();
+    if (s.includes("edit")) return "edit";
+    return "view";
+  };
+
   const openShare = (item: DataRoomItem) => {
     ignoreNextRowClickRef.current = true;
     const base = typeof window !== "undefined" ? window.location.origin : "";
     if (isFolder(item)) setShareLink(`${base}/dataroom/${folderSlug}/${item.slug}`);
     else setShareLink(`${base}/dataroom/${folderSlug}?file=${item.id}`);
+    setShareItem(item);
+    // @ts-expect-error sharing is common on both folders and files
+    setShareAccess(sharingToAccess((item as any).sharing ?? ""));
     setShareOpen(true);
+  };
+
+  const handleShareAccessChange = (access: "view" | "edit") => {
+    setShareAccess(access);
+    if (!shareItem) return;
+    const label =
+      access === "edit"
+        ? "Anyone with link (edit)"
+        : "Anyone with link (view)";
+    setSharing(path, shareItem.id, label);
   };
 
   const handleDownload = (file: DataRoomFile) => {
@@ -173,6 +196,11 @@ export default function FolderPage() {
     setOverwriteOpen(false);
     setOverwriteResolve(null);
     setPendingUploadFiles([]);
+  };
+
+  const handleFolderDownload = () => {
+    const name = folder?.name ?? folderSlug ?? "Folder";
+    downloadFolderZip(name);
   };
 
   const handleNewFolder = (name: string) => {
@@ -260,11 +288,11 @@ export default function FolderPage() {
             onFolderUpload={() => setUploadDialogOpen(true)}
           />
           <div className="flex-1 min-w-[200px]">
-            <DataRoomControls
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              onDownload={() => {}}
-            />
+        <DataRoomControls
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onDownload={handleFolderDownload}
+        />
           </div>
         </div>
 
@@ -598,7 +626,14 @@ export default function FolderPage() {
         onConfirm={confirmOverwrite}
       />
 
-      <ShareLinkModal open={shareOpen} onOpenChange={setShareOpen} link={shareLink} title="Share link" />
+      <ShareLinkModal
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        link={shareLink}
+        title="Share link"
+        access={shareAccess}
+        onAccessChange={handleShareAccessChange}
+      />
 
       {moveItemObj && (
         <MoveToFolderModal
