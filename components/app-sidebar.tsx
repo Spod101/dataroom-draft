@@ -11,9 +11,10 @@ import {
   BarChartIcon,
   BellIcon,
   ChevronDownIcon,
-  LifeBuoyIcon,
-  FileTextIcon,
   ClipboardListIcon,
+  SunIcon,
+  MoonIcon,
+  LogOutIcon,
 } from "lucide-react"
 
 import {
@@ -27,9 +28,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
 import {
@@ -41,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useTheme } from "@/components/theme-provider"
 
 // This is sample data
 const data = {
@@ -72,37 +71,21 @@ const data = {
       icon: ClipboardListIcon,
     },
   ],
-  navSecondary: [
-    {
-      title: "Documentation",
-      url: "#",
-      icon: FileTextIcon,
-    },
-    {
-      title: "Support",
-      url: "#",
-      icon: LifeBuoyIcon,
-    },
-  ],
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
-  const [openItems, setOpenItems] = React.useState<string[]>(["Data Room"])
-
-  const toggleItem = (title: string) => {
-    setOpenItems((prev) =>
-      prev.includes(title)
-        ? prev.filter((item) => item !== title)
-        : [...prev, title]
-    )
-  }
+  const { theme, setTheme } = useTheme()
 
   const isActive = (url: string) => {
     if (url === "/dataroom") {
       return pathname === url || pathname.startsWith("/dataroom")
     }
     return pathname === url || pathname.startsWith(url + "/")
+  }
+
+  const toggleTheme = () => {
+    setTheme(theme === "dark" ? "light" : "dark")
   }
 
   return (
@@ -146,24 +129,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   >
                     <Link href={item.url}>
                       {item.icon && <item.icon />}
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {/* Secondary Navigation */}
-        <SidebarGroup className="mt-auto">
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {data.navSecondary.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild tooltip={item.title}>
-                    <Link href={item.url}>
-                      <item.icon />
                       <span>{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
@@ -230,6 +195,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={toggleTheme}>
+                  {theme === "dark" ? (
+                    <>
+                      <SunIcon className="mr-2 h-4 w-4" />
+                      Light Mode
+                    </>
+                  ) : (
+                    <>
+                      <MoonIcon className="mr-2 h-4 w-4" />
+                      Dark Mode
+                    </>
+                  )}
+                </DropdownMenuItem>
                 <DropdownMenuItem>
                   <BellIcon className="mr-2 h-4 w-4" />
                   Notifications
@@ -239,7 +217,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>Log out</DropdownMenuItem>
+                <DropdownMenuItem>
+                  <LogOutIcon className="mr-2 h-4 w-4" />
+                  Log out
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>

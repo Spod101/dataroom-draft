@@ -11,11 +11,10 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
+import { SearchBar } from "@/components/dataroom/search-bar";
 import { 
-  SearchIcon, 
   MoreHorizontalIcon, 
   HomeIcon, 
   FolderIcon,
@@ -382,16 +381,12 @@ export default function PermissionsPage() {
           <CardContent className="flex-1 flex flex-col p-0">
             {/* Search */}
             <div className="px-4 pb-3">
-              <div className="relative">
-                <Input
-                  type="search"
-                  placeholder="Search User"
-                  value={searchUser}
-                  onChange={(e) => setSearchUser(e.target.value)}
-                  className="pr-9"
-                />
-                <SearchIcon className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              </div>
+              <SearchBar
+                placeholder="Search User"
+                value={searchUser}
+                onSearch={setSearchUser}
+                variant="compact"
+              />
             </div>
 
             {/* Have Access Section */}
@@ -476,16 +471,12 @@ export default function PermissionsPage() {
           <CardContent className="flex-1 flex flex-col p-0">
             {/* Search */}
             <div className="px-4 pb-3">
-              <div className="relative">
-                <Input
-                  type="search"
-                  placeholder="Search Folder / File"
-                  value={searchFile}
-                  onChange={(e) => setSearchFile(e.target.value)}
-                  className="pr-9"
-                />
-                <SearchIcon className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              </div>
+              <SearchBar
+                placeholder="Search Folder / File"
+                value={searchFile}
+                onSearch={setSearchFile}
+                variant="compact"
+              />
             </div>
 
             {/* Column Headers */}

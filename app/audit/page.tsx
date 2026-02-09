@@ -11,19 +11,10 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { 
-  DownloadIcon, 
-  SearchIcon,
-  ChevronDownIcon,
-} from "lucide-react";
+import { SearchBar } from "@/components/dataroom/search-bar";
+import { FilterSelect } from "@/components/dataroom/filter-select";
+import { DownloadButton } from "@/components/dataroom/download-button";
+import { ChevronDownIcon } from "lucide-react";
 
 // Members/Users data - same as permissions
 const members = [
@@ -265,96 +256,58 @@ export default function AuditPage() {
       </header>
       
       <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
-        {/* Filters Row */}
-        <Card className="border-primary/20">
-          <CardContent className="p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Members Filter */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Members</span>
-                <Select value={memberFilter} onValueChange={setMemberFilter}>
-                  <SelectTrigger className="w-[120px] h-9">
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    {members.map(member => (
-                      <SelectItem key={member.id} value={member.name}>
-                        {member.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Actions Filter */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Actions</span>
-                <Select value={actionFilter} onValueChange={setActionFilter}>
-                  <SelectTrigger className="w-[120px] h-9">
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {actionTypes.map(action => (
-                      <SelectItem key={action.id} value={action.id}>
-                        {action.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Users Affected Filter */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Users</span>
-                <Select value={userAffectedFilter} onValueChange={setUserAffectedFilter}>
-                  <SelectTrigger className="w-[120px] h-9">
-                    <SelectValue placeholder="All" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {usersAffected.map(user => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Period Filter */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Period</span>
-                <Button variant="outline" size="sm" className="h-9 gap-2">
-                  {dateRange}
-                  <ChevronDownIcon className="h-4 w-4" />
-                </Button>
-              </div>
-
-              {/* Download Button */}
-              <div className="ml-auto">
-                <Button className="bg-primary hover:bg-primary/90 gap-2">
-                  <DownloadIcon className="h-4 w-4" />
-                  Download
-                  <ChevronDownIcon className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Search Bar */}
+        {/* Filters Row - same bubble style as Data Room controls */}
         <div className="bg-background rounded-xl border border-primary/20 shadow-sm p-3 hover:border-primary/40 transition-colors">
-          <div className="relative">
-            <SearchIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary/60" />
-            <Input
-              type="search"
-              placeholder="Search audit logs..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 h-9 border-0 focus-visible:ring-0 focus-visible:ring-primary/20 shadow-none bg-transparent placeholder:text-muted-foreground"
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Members Filter */}
+            <FilterSelect
+              label="Members"
+              value={memberFilter}
+              onValueChange={setMemberFilter}
+              options={[
+                { id: "all", name: "All" },
+                ...members.map(m => ({ id: m.name, name: m.name }))
+              ]}
             />
+
+            {/* Actions Filter */}
+            <FilterSelect
+              label="Actions"
+              value={actionFilter}
+              onValueChange={setActionFilter}
+              options={actionTypes}
+            />
+
+            {/* Users Affected Filter */}
+            <FilterSelect
+              label="Users"
+              value={userAffectedFilter}
+              onValueChange={setUserAffectedFilter}
+              options={usersAffected}
+            />
+
+            {/* Period Filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Period</span>
+              <Button variant="outline" size="sm" className="h-9 gap-2 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary/50">
+                {dateRange}
+                <ChevronDownIcon className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Download Button - same outline style as Data Room */}
+            <div className="ml-auto">
+              <DownloadButton showDropdown />
+            </div>
           </div>
         </div>
+
+        {/* Search Bar */}
+        <SearchBar
+          placeholder="Search audit logs..."
+          value={searchTerm}
+          onSearch={setSearchTerm}
+        />
 
         {/* Audit Table */}
         <Card className="border-primary/20 flex-1">

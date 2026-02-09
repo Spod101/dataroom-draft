@@ -10,10 +10,9 @@ import {
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { SearchBar } from "@/components/dataroom/search-bar";
 import { 
-  SearchIcon, 
   HomeIcon, 
   FolderIcon,
   FileTextIcon,
@@ -268,16 +267,12 @@ export default function InsightsPage() {
           <CardContent className="flex-1 flex flex-col p-0">
             {/* Search */}
             <div className="px-4 pb-3">
-              <div className="relative">
-                <Input
-                  type="search"
-                  placeholder="Search File"
-                  value={searchFile}
-                  onChange={(e) => setSearchFile(e.target.value)}
-                  className="pr-9 bg-muted/50"
-                />
-                <SearchIcon className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              </div>
+              <SearchBar
+                placeholder="Search File"
+                value={searchFile}
+                onSearch={setSearchFile}
+                variant="compact"
+              />
             </div>
 
             {/* Files Tree */}
@@ -349,16 +344,12 @@ export default function InsightsPage() {
             <CardContent className="pt-4">
               {/* Search */}
               <div className="mb-4">
-                <div className="relative">
-                  <Input
-                    type="search"
-                    placeholder="Search File"
-                    value={searchUser}
-                    onChange={(e) => setSearchUser(e.target.value)}
-                    className="pr-9"
-                  />
-                  <SearchIcon className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                </div>
+                <SearchBar
+                  placeholder="Search User"
+                  value={searchUser}
+                  onSearch={setSearchUser}
+                  variant="compact"
+                />
               </div>
 
               {/* Table Header */}

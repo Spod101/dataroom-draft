@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Roboto } from "next/font/google";
 import "./globals.css";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/components/theme-provider";
 import { AppSidebar } from "@/components/app-sidebar";
 
 const roboto = Roboto({subsets:['latin'],variable:'--font-sans'});
@@ -28,16 +29,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={roboto.variable}>
+    <html lang="en" className={roboto.variable} suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <TooltipProvider>
-          <SidebarProvider>
-            <AppSidebar />
-            {children}
-          </SidebarProvider>
-        </TooltipProvider>
+        <ThemeProvider defaultTheme="light" storageKey="dataroom-theme">
+          <TooltipProvider>
+            <SidebarProvider>
+              <AppSidebar />
+              {children}
+            </SidebarProvider>
+          </TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

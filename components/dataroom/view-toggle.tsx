@@ -2,7 +2,8 @@
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { LayoutGridIcon, ListIcon, DownloadIcon } from "lucide-react";
+import { LayoutGridIcon, ListIcon } from "lucide-react";
+import { DownloadButton } from "./download-button";
 
 interface ViewToggleProps {
   viewMode: "grid" | "list";
@@ -51,15 +52,7 @@ export function ViewToggle({
 
         {/* Download Button */}
         {showDownload && (
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="border-primary/30 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary/50"
-            onClick={onDownload}
-          >
-            <DownloadIcon className="h-4 w-4 mr-2" />
-            Download
-          </Button>
+          <DownloadButton onClick={onDownload} />
         )}
       </div>
     </div>
