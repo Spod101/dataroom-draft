@@ -30,6 +30,7 @@ import { InputDialog } from "@/components/dataroom/input-dialog";
 import { MoveToFolderModal } from "@/components/dataroom/move-to-folder-modal";
 import { isFolder, type DataRoomPath, type DataRoomFolder, type DataRoomItem } from "@/lib/dataroom-types";
 import { downloadFolderZip } from "@/lib/dataroom-download";
+import { useToast } from "@/components/ui/toast";
 import {
   PlusIcon,
   MoreVerticalIcon,
@@ -51,6 +52,7 @@ const ROOT_PATH: string[] = [];
 export default function DataRoomPage() {
   const router = useRouter();
   const { getChildren, getFolder, addFolder, renameItem, deleteItem, moveItem, setSharing } = useDataRoom();
+  const toast = useToast();
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
   const ignoreNextRowClickRef = React.useRef(false);
 
@@ -76,6 +78,7 @@ export default function DataRoomPage() {
   const handleNewFolder = (name: string) => {
     addFolder(ROOT_PATH, name);
     setNewFolderOpen(false);
+    toast.success("Folder created");
   };
 
   const openRename = (item: DataRoomItem) => {
@@ -90,6 +93,7 @@ export default function DataRoomPage() {
     renameItem(ROOT_PATH, renameItemId, newName);
     setRenameOpen(false);
     setRenameItemId(null);
+    toast.success("Folder renamed");
   };
 
   const openDelete = (item: DataRoomItem) => {
@@ -104,6 +108,7 @@ export default function DataRoomPage() {
     deleteItem(ROOT_PATH, deleteItemId);
     setDeleteOpen(false);
     setDeleteItemId(null);
+    toast.success("Folder deleted");
   };
 
   const sharingToAccess = (sharing: string | undefined): "view" | "edit" => {
@@ -138,6 +143,7 @@ export default function DataRoomPage() {
 
   const handleRootDownload = () => {
     downloadFolderZip("Data Room");
+    toast.success('Downloading "Data Room" as ZIP');
   };
 
   const openMove = (item: DataRoomItem) => {

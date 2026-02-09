@@ -25,6 +25,7 @@ import { MoveToFolderModal } from "@/components/dataroom/move-to-folder-modal";
 import { NewDropdown } from "@/components/dataroom/new-dropdown";
 import { UploadFilesDialog } from "@/components/dataroom/upload-files-dialog";
 import { downloadFile, downloadFolderZip } from "@/lib/dataroom-download";
+import { useToast } from "@/components/ui/toast";
 import {
   isFolder,
   isFile,
@@ -79,6 +80,7 @@ export default function IndustryPage() {
 
   const { getChildren, getFolder, addFolder, addFiles, renameItem, deleteItem, moveItem, setSharing } =
     useDataRoom();
+  const toast = useToast();
   const parentFolder = getFolder([folderSlug]);
   const subfolder = getFolder([folderSlug, subfolderSlug]);
   const folder = getFolder(path);
@@ -120,6 +122,7 @@ export default function IndustryPage() {
     renameItem(path, renameItemId, newName);
     setRenameOpen(false);
     setRenameItemId(null);
+    toast.success("Item renamed");
   };
 
   const openRename = (item: DataRoomItem) => {
@@ -134,6 +137,7 @@ export default function IndustryPage() {
     deleteItem(path, deleteItemId);
     setDeleteOpen(false);
     setDeleteItemId(null);
+    toast.success("Item deleted");
   };
 
   const openDelete = (item: DataRoomItem) => {
@@ -182,6 +186,7 @@ export default function IndustryPage() {
 
   const handleUpload = (files: DataRoomFile[]) => {
     addFiles(path, files);
+    toast.success("Files uploaded");
   };
 
   const handleOverwriteWarning = (
@@ -201,6 +206,7 @@ export default function IndustryPage() {
     setOverwriteOpen(false);
     setOverwriteResolve(null);
     setPendingUploadFiles([]);
+    toast.success("File overwritten");
   };
 
   const cancelOverwrite = () => {
@@ -213,11 +219,13 @@ export default function IndustryPage() {
   const handleFolderDownload = () => {
     const name = folder?.name ?? industrySlug ?? "Folder";
     downloadFolderZip(name);
+    toast.success(`Downloading "${name}" as ZIP`);
   };
 
   const handleNewFolder = (name: string) => {
     addFolder(path, name);
     setNewFolderOpen(false);
+    toast.success("Folder created");
   };
 
   const openMove = (item: DataRoomItem) => {

@@ -25,6 +25,7 @@ import { MoveToFolderModal } from "@/components/dataroom/move-to-folder-modal";
 import { NewDropdown } from "@/components/dataroom/new-dropdown";
 import { UploadFilesDialog } from "@/components/dataroom/upload-files-dialog";
 import { downloadFile, downloadFolderZip } from "@/lib/dataroom-download";
+import { useToast } from "@/components/ui/toast";
 import {
   isFolder,
   isFile,
@@ -74,6 +75,7 @@ export default function FolderPage() {
 
   const { getChildren, getFolder, addFolder, addFiles, renameItem, deleteItem, moveItem, setSharing } =
     useDataRoom();
+  const toast = useToast();
   const folder = getFolder(path);
   const children = getChildren(path);
 
@@ -113,6 +115,7 @@ export default function FolderPage() {
     renameItem(path, renameItemId, newName);
     setRenameOpen(false);
     setRenameItemId(null);
+    toast.success("Item renamed");
   };
 
   const openRename = (item: DataRoomItem) => {
@@ -127,6 +130,7 @@ export default function FolderPage() {
     deleteItem(path, deleteItemId);
     setDeleteOpen(false);
     setDeleteItemId(null);
+    toast.success("Item deleted");
   };
 
   const openDelete = (item: DataRoomItem) => {
@@ -201,11 +205,13 @@ export default function FolderPage() {
   const handleFolderDownload = () => {
     const name = folder?.name ?? folderSlug ?? "Folder";
     downloadFolderZip(name);
+    toast.success(`Downloading "${name}" as ZIP`);
   };
 
   const handleNewFolder = (name: string) => {
     addFolder(path, name);
     setNewFolderOpen(false);
+    toast.success("Folder created");
   };
 
   const openMove = (item: DataRoomItem) => {

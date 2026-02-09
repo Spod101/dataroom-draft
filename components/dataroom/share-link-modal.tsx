@@ -17,6 +17,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useToast } from "@/components/ui/toast";
 
 type ShareAccess = "view" | "edit";
 
@@ -40,6 +41,7 @@ export function ShareLinkModal({
   onAccessChange,
 }: ShareLinkModalProps) {
   const [copied, setCopied] = React.useState(false);
+  const toast = useToast();
 
   const handleCopy = async () => {
     try {
@@ -55,6 +57,7 @@ export function ShareLinkModal({
         setTimeout(() => setCopied(false), 2000);
       }
     }
+    toast.success("Link copied to clipboard");
   };
 
   const description =
