@@ -21,11 +21,14 @@ import { useDataRoom } from "@/contexts/dataroom-context";
 import { ConfirmDialog } from "@/components/dataroom/confirm-dialog";
 import { ShareLinkModal } from "@/components/dataroom/share-link-modal";
 import { InputDialog } from "@/components/dataroom/input-dialog";
-import { UploadDropZone } from "@/components/dataroom/upload-drop-zone";
+import { MoveToFolderModal } from "@/components/dataroom/move-to-folder-modal";
+import { NewDropdown } from "@/components/dataroom/new-dropdown";
+import { UploadFilesDialog } from "@/components/dataroom/upload-files-dialog";
 import { downloadFile } from "@/lib/dataroom-download";
 import {
   isFolder,
   isFile,
+  type DataRoomPath,
   type DataRoomFolder,
   type DataRoomFile,
   type DataRoomItem,
@@ -38,7 +41,7 @@ import {
   FolderIcon,
   FileTextIcon,
   UsersIcon,
-  UploadIcon,
+  PlusIcon,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -68,7 +71,7 @@ export default function FolderPage() {
   const folderSlug = params.folder as string;
   const path = React.useMemo(() => [folderSlug], [folderSlug]);
 
-  const { getChildren, getFolder, addFiles, renameItem, deleteItem } = useDataRoom();
+  const { getChildren, getFolder, addFolder, addFiles, renameItem, deleteItem, moveItem } = useDataRoom();
   const folder = getFolder(path);
   const children = getChildren(path);
 
@@ -86,6 +89,13 @@ export default function FolderPage() {
   const [overwriteName, setOverwriteName] = React.useState("");
   const [overwriteResolve, setOverwriteResolve] = React.useState<((ok: boolean) => void) | null>(null);
   const [pendingUploadFiles, setPendingUploadFiles] = React.useState<DataRoomFile[]>([]);
+  const [newFolderOpen, setNewFolderOpen] = React.useState(false);
+  const [moveOpen, setMoveOpen] = React.useState(false);
+  const [moveItemObj, setMoveItemObj] = React.useState<DataRoomItem | null>(null);
+  const [moveConfirmOpen, setMoveConfirmOpen] = React.useState(false);
+  const [moveTargetPath, setMoveTargetPath] = React.useState<DataRoomPath | null>(null);
+  const [moveTargetLabel, setMoveTargetLabel] = React.useState("");
+  const [uploadDialogOpen, setUploadDialogOpen] = React.useState(false);
 
   const existingFileNames = React.useMemo(
     () => new Set(children.filter(isFile).map((f) => f.name)),
@@ -162,6 +172,34 @@ export default function FolderPage() {
     setPendingUploadFiles([]);
   };
 
+  const handleNewFolder = (name: string) => {
+    addFolder(path, name);
+    setNewFolderOpen(false);
+  };
+
+  const openMove = (item: DataRoomItem) => {
+    ignoreNextRowClickRef.current = true;
+    setMoveItemObj(item);
+    setMoveOpen(true);
+  };
+
+  const handleMoveSelect = (targetPath: DataRoomPath) => {
+    const label =
+      targetPath.length === 0 ? "Data Room" : (getFolder(targetPath)?.name ?? targetPath[targetPath.length - 1]);
+    setMoveTargetPath(targetPath);
+    setMoveTargetLabel(label);
+    setMoveConfirmOpen(true);
+  };
+
+  const handleMoveConfirm = () => {
+    if (!moveItemObj || moveTargetPath === null) return;
+    moveItem(path, moveItemObj.id, moveTargetPath);
+    setMoveConfirmOpen(false);
+    setMoveTargetPath(null);
+    setMoveTargetLabel("");
+    setMoveItemObj(null);
+  };
+
   if (!folder) {
     return (
       <SidebarInset>
@@ -201,27 +239,28 @@ export default function FolderPage() {
       </div>
 
       <div className="flex flex-1 flex-col p-6 gap-4">
-        <DataRoomControls
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          onDownload={() => {}}
-        />
+        <div className="flex flex-row flex-wrap items-center gap-3">
+          <NewDropdown
+            onNewFolder={() => setNewFolderOpen(true)}
+            onFileUpload={() => setUploadDialogOpen(true)}
+            onFolderUpload={() => setUploadDialogOpen(true)}
+          />
+          <div className="flex-1 min-w-[200px]">
+            <DataRoomControls
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              onDownload={() => {}}
+            />
+          </div>
+        </div>
 
-        {/* Upload drop zone */}
-        <UploadDropZone
+        <UploadFilesDialog
+          open={uploadDialogOpen}
+          onOpenChange={setUploadDialogOpen}
           onFiles={handleUpload}
           onReplaceWarning={handleOverwriteWarning}
           existingNames={existingFileNames}
-          className="rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 overflow-hidden"
-        >
-          <Card className="border-0 shadow-none bg-transparent">
-            <CardContent className="p-6 flex flex-col items-center justify-center min-h-[120px] cursor-pointer hover:bg-primary/5 transition-colors">
-              <UploadIcon className="h-10 w-10 text-primary" />
-              <span className="text-sm font-medium text-primary">Drop files here or click to upload</span>
-              <span className="text-xs text-muted-foreground">PDF, Word, Excel, PPT, images, videos</span>
-            </CardContent>
-          </Card>
-        </UploadDropZone>
+        />
 
         <div className="flex-1">
           {viewMode === "list" ? (
@@ -295,6 +334,13 @@ export default function FolderPage() {
                               <LinkIconLucide className="h-4 w-4 mr-2" />
                               Copy Link
                             </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="focus:bg-primary/10 focus:text-primary"
+                              onSelect={(e) => { e.preventDefault(); openMove(item); }}
+                            >
+                              <FolderIcon className="h-4 w-4 mr-2" />
+                              Move to...
+                            </DropdownMenuItem>
                             {isFile(item) && (
                               <DropdownMenuItem
                                 className="focus:bg-primary/10 focus:text-primary"
@@ -363,6 +409,13 @@ export default function FolderPage() {
                               Copy Link
                             </DropdownMenuItem>
                             <DropdownMenuItem
+                              className="focus:bg-primary/10 focus:text-primary"
+                              onSelect={(e) => { e.preventDefault(); openMove(item); }}
+                            >
+                              <FolderIcon className="h-4 w-4 mr-2" />
+                              Move to...
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
                               className="focus:bg-destructive/10 focus:text-destructive"
                               onSelect={(e) => { e.preventDefault(); openDelete(item); }}
                             >
@@ -415,6 +468,13 @@ export default function FolderPage() {
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
+                              onSelect={(e) => { e.preventDefault(); openMove(item); }}
+                            >
+                              <FolderIcon className="h-4 w-4 mr-2" />
+                              Move to...
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="focus:bg-primary/10 focus:text-primary"
                               onSelect={(e) => { e.preventDefault(); handleDownload(item); }}
                             >
                               Download
@@ -441,10 +501,37 @@ export default function FolderPage() {
                   </Card>
                 )
               )}
+              <Card
+                className="group hover:shadow-lg hover:shadow-primary/20 hover:border-primary transition-all cursor-pointer relative overflow-hidden border-2 border-dashed border-primary/40 bg-primary/5"
+                onClick={() => setNewFolderOpen(true)}
+              >
+                <CardContent className="p-6 h-full flex flex-col items-center justify-center min-h-[180px]">
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 group-hover:scale-110 transition-all">
+                      <PlusIcon className="h-8 w-8 text-primary" />
+                    </div>
+                    <div className="text-center">
+                      <h3 className="font-semibold text-lg mb-1 text-primary">New Folder</h3>
+                      <p className="text-sm text-muted-foreground">Create a subfolder here</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>
       </div>
+
+      <InputDialog
+        open={newFolderOpen}
+        onOpenChange={setNewFolderOpen}
+        title="New Folder"
+        description="Create a new subfolder inside this folder."
+        label="Folder name"
+        placeholder="Enter folder name"
+        submitLabel="Create"
+        onSubmit={handleNewFolder}
+      />
 
       <InputDialog
         open={renameOpen}
@@ -480,6 +567,31 @@ export default function FolderPage() {
       />
 
       <ShareLinkModal open={shareOpen} onOpenChange={setShareOpen} link={shareLink} title="Share link" />
+
+      {moveItemObj && (
+        <MoveToFolderModal
+          open={moveOpen}
+          onOpenChange={setMoveOpen}
+          itemName={moveItemObj.name}
+          sourcePath={path}
+          movingItem={moveItemObj}
+          onSelect={handleMoveSelect}
+        />
+      )}
+
+      <ConfirmDialog
+        open={moveConfirmOpen}
+        onOpenChange={setMoveConfirmOpen}
+        title="Move item"
+        description={
+          moveItemObj
+            ? `Move "${moveItemObj.name}" to ${moveTargetLabel}?`
+            : ""
+        }
+        confirmLabel="Move"
+        cancelLabel="Cancel"
+        onConfirm={handleMoveConfirm}
+      />
     </SidebarInset>
   );
 }

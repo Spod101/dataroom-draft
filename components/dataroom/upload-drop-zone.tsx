@@ -29,8 +29,7 @@ function formatDate() {
   return d.toLocaleDateString() + " " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
-function fileToDataRoomFile(f: File): DataRoomFile {
-  const ext = f.name.split(".").pop() ?? "";
+export function fileToDataRoomFile(f: File): DataRoomFile {
   const sizeStr = f.size < 1024 ? f.size + " B" : f.size < 1024 * 1024 ? (f.size / 1024).toFixed(1) + " KB" : (f.size / (1024 * 1024)).toFixed(1) + " MB";
   return {
     id: uid(),
@@ -44,12 +43,19 @@ function fileToDataRoomFile(f: File): DataRoomFile {
   };
 }
 
+export function filesToDataRoomFiles(fileList: FileList | File[]): DataRoomFile[] {
+  const arr = Array.isArray(fileList) ? fileList : Array.from(fileList);
+  return arr.map(fileToDataRoomFile);
+}
+
 interface UploadDropZoneProps {
   onFiles: (files: DataRoomFile[]) => void;
   onReplaceWarning?: (name: string, files: DataRoomFile[], resolve: (ok: boolean) => void) => void;
   existingNames?: Set<string>;
   className?: string;
   children?: React.ReactNode;
+  /** Optional ref to trigger file picker programmatically (e.g. from a "File upload" dropdown item). */
+  openFilePickerRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 export function UploadDropZone({
@@ -58,9 +64,19 @@ export function UploadDropZone({
   existingNames = new Set(),
   className,
   children,
+  openFilePickerRef,
 }: UploadDropZoneProps) {
   const [drag, setDrag] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (openFilePickerRef) {
+      openFilePickerRef.current = () => inputRef.current?.click();
+      return () => {
+        openFilePickerRef.current = null;
+      };
+    }
+  }, [openFilePickerRef]);
 
   const mapFiles = (fileList: FileList | null): DataRoomFile[] => {
     if (!fileList?.length) return [];

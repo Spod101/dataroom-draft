@@ -27,7 +27,8 @@ import { useDataRoom } from "@/contexts/dataroom-context";
 import { ConfirmDialog } from "@/components/dataroom/confirm-dialog";
 import { ShareLinkModal } from "@/components/dataroom/share-link-modal";
 import { InputDialog } from "@/components/dataroom/input-dialog";
-import { isFolder, type DataRoomFolder, type DataRoomItem } from "@/lib/dataroom-types";
+import { MoveToFolderModal } from "@/components/dataroom/move-to-folder-modal";
+import { isFolder, type DataRoomPath, type DataRoomFolder, type DataRoomItem } from "@/lib/dataroom-types";
 import {
   PlusIcon,
   MoreVerticalIcon,
@@ -48,7 +49,7 @@ const ROOT_PATH: string[] = [];
 
 export default function DataRoomPage() {
   const router = useRouter();
-  const { getChildren, addFolder, renameItem, deleteItem } = useDataRoom();
+  const { getChildren, getFolder, addFolder, renameItem, deleteItem, moveItem } = useDataRoom();
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
   const ignoreNextRowClickRef = React.useRef(false);
 
@@ -61,6 +62,11 @@ export default function DataRoomPage() {
   const [deleteName, setDeleteName] = React.useState("");
   const [shareOpen, setShareOpen] = React.useState(false);
   const [shareLink, setShareLink] = React.useState("");
+  const [moveOpen, setMoveOpen] = React.useState(false);
+  const [moveItemObj, setMoveItemObj] = React.useState<DataRoomItem | null>(null);
+  const [moveConfirmOpen, setMoveConfirmOpen] = React.useState(false);
+  const [moveTargetPath, setMoveTargetPath] = React.useState<DataRoomPath | null>(null);
+  const [moveTargetLabel, setMoveTargetLabel] = React.useState("");
 
   const folders = getChildren(ROOT_PATH).filter((c): c is DataRoomFolder => isFolder(c));
 
@@ -106,6 +112,29 @@ export default function DataRoomPage() {
 
   const itemsCount = (folder: DataRoomFolder) =>
     folder.children.length > 0 ? `${folder.children.length} items` : "0 items";
+
+  const openMove = (item: DataRoomItem) => {
+    ignoreNextRowClickRef.current = true;
+    setMoveItemObj(item);
+    setMoveOpen(true);
+  };
+
+  const handleMoveSelect = (targetPath: DataRoomPath) => {
+    const label =
+      targetPath.length === 0 ? "Data Room" : (getFolder(targetPath)?.name ?? targetPath[targetPath.length - 1]);
+    setMoveTargetPath(targetPath);
+    setMoveTargetLabel(label);
+    setMoveConfirmOpen(true);
+  };
+
+  const handleMoveConfirm = () => {
+    if (!moveItemObj || moveTargetPath === null) return;
+    moveItem(ROOT_PATH, moveItemObj.id, moveTargetPath);
+    setMoveConfirmOpen(false);
+    setMoveTargetPath(null);
+    setMoveTargetLabel("");
+    setMoveItemObj(null);
+  };
 
   return (
     <SidebarInset>
@@ -176,34 +205,41 @@ export default function DataRoomPage() {
                             <PencilIcon className="h-4 w-4 mr-2" />
                             Rename
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="focus:bg-primary/10 focus:text-primary"
-                            onSelect={(e) => { e.preventDefault(); openShare(folder); }}
-                          >
-                            <LinkIcon className="h-4 w-4 mr-2" />
-                            Copy Link
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="focus:bg-destructive/10 focus:text-destructive"
-                            onSelect={(e) => { e.preventDefault(); openDelete(folder); }}
-                          >
-                            <TrashIcon className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                    <div className="mt-auto">
-                      <h3 className="font-semibold text-lg mb-2 group-hover:text-primary transition-colors">
-                        {folder.name}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">
-                        {folder.description ?? `${folder.children.length} items`}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                            <DropdownMenuItem
+                              className="focus:bg-primary/10 focus:text-primary"
+                              onSelect={(e) => { e.preventDefault(); openShare(folder); }}
+                            >
+                              <LinkIcon className="h-4 w-4 mr-2" />
+                              Copy Link
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="focus:bg-primary/10 focus:text-primary"
+                              onSelect={(e) => { e.preventDefault(); openMove(folder); }}
+                            >
+                              <FolderIcon className="h-4 w-4 mr-2" />
+                              Move to...
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="focus:bg-destructive/10 focus:text-destructive"
+                              onSelect={(e) => { e.preventDefault(); openDelete(folder); }}
+                            >
+                              <TrashIcon className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                      <div className="mt-auto">
+                        <h3 className="font-semibold text-lg mb-2 group-hover:text-primary transition-colors">
+                          {folder.name}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">
+                          {folder.description ?? `${folder.children.length} items`}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
 
               <Card
                 className="group hover:shadow-lg hover:shadow-primary/20 hover:border-primary transition-all cursor-pointer relative overflow-hidden border-2 border-dashed border-primary/40 bg-primary/5"
@@ -298,6 +334,13 @@ export default function DataRoomPage() {
                               Copy Link
                             </DropdownMenuItem>
                             <DropdownMenuItem
+                              className="focus:bg-primary/10 focus:text-primary"
+                              onSelect={(e) => { e.preventDefault(); openMove(folder); }}
+                            >
+                              <FolderIcon className="h-4 w-4 mr-2" />
+                              Move to...
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
                               className="focus:bg-destructive/10 focus:text-destructive"
                               onSelect={(e) => { e.preventDefault(); openDelete(folder); }}
                             >
@@ -355,6 +398,31 @@ export default function DataRoomPage() {
         onOpenChange={setShareOpen}
         link={shareLink}
         title="Share link"
+      />
+
+      {moveItemObj && (
+        <MoveToFolderModal
+          open={moveOpen}
+          onOpenChange={setMoveOpen}
+          itemName={moveItemObj.name}
+          sourcePath={ROOT_PATH}
+          movingItem={moveItemObj}
+          onSelect={handleMoveSelect}
+        />
+      )}
+
+      <ConfirmDialog
+        open={moveConfirmOpen}
+        onOpenChange={setMoveConfirmOpen}
+        title="Move folder"
+        description={
+          moveItemObj
+            ? `Move "${moveItemObj.name}" to ${moveTargetLabel}?`
+            : ""
+        }
+        confirmLabel="Move"
+        cancelLabel="Cancel"
+        onConfirm={handleMoveConfirm}
       />
     </SidebarInset>
   );

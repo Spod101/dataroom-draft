@@ -83,6 +83,7 @@ type Action =
   | { type: "RENAME"; path: DataRoomPath; itemId: string; newName: string }
   | { type: "DELETE"; path: DataRoomPath; itemId: string }
   | { type: "REPLACE_FILE"; path: DataRoomPath; fileId: string; file: DataRoomFile }
+  | { type: "MOVE_ITEM"; sourcePath: DataRoomPath; itemId: string; targetPath: DataRoomPath }
   | { type: "RESET" };
 
 function reducer(state: DataRoomState, action: Action): DataRoomState {
@@ -160,9 +161,63 @@ function reducer(state: DataRoomState, action: Action): DataRoomState {
         rootFolders: setChildrenAtPath(state.rootFolders, action.path, children),
       };
     }
+    case "MOVE_ITEM": {
+      const sourceChildren = getChildrenAtPath(state.rootFolders, action.sourcePath);
+      const item = sourceChildren.find((c) => c.id === action.itemId);
+      if (!item) return state;
+      if (
+        action.sourcePath.length === action.targetPath.length &&
+        action.sourcePath.every((s, i) => s === action.targetPath[i])
+      ) {
+        return state;
+      }
+      if (isFolder(item)) {
+        const descendantPrefix = [...action.sourcePath, item.slug];
+        if (
+          action.targetPath.length >= descendantPrefix.length &&
+          descendantPrefix.every((s, i) => action.targetPath[i] === s)
+        ) {
+          return state;
+        }
+      }
+      let targetChildren = [...getChildrenAtPath(state.rootFolders, action.targetPath)];
+      const moved =
+        isFolder(item)
+          ? {
+              ...item,
+              slug: uniqueSlug(
+                item.slug,
+                targetChildren.filter((c): c is DataRoomFolder => isFolder(c)).map((c) => c.slug)
+              ),
+              modified: now,
+              modifiedBy,
+            }
+          : { ...item, modified: now, modifiedBy };
+      const newSourceChildren = sourceChildren.filter((c) => c.id !== action.itemId);
+      const newTargetChildren = [...targetChildren, moved];
+      let next = setChildrenAtPath(state.rootFolders, action.sourcePath, newSourceChildren);
+      next = setChildrenAtPath(next, action.targetPath, newTargetChildren);
+      return { rootFolders: next };
+    }
     default:
       return state;
   }
+}
+
+export type FolderWithPath = { path: DataRoomPath; folder: DataRoomFolder };
+
+/** Returns all folders in the tree with their paths (for move-target picker). */
+export function getAllFoldersWithPaths(rootFolders: DataRoomFolder[]): FolderWithPath[] {
+  const out: FolderWithPath[] = [];
+  function walk(path: DataRoomPath, folders: DataRoomFolder[]) {
+    for (const f of folders) {
+      out.push({ path: [...path, f.slug], folder: f });
+      const childFolders = f.children.filter((c): c is DataRoomFolder => isFolder(c));
+      walk([...path, f.slug], childFolders);
+    }
+  }
+  walk([], rootFolders);
+  return out;
 }
 
 type DataRoomContextValue = {
@@ -174,6 +229,7 @@ type DataRoomContextValue = {
   renameItem: (path: DataRoomPath, itemId: string, newName: string) => void;
   deleteItem: (path: DataRoomPath, itemId: string) => void;
   replaceFile: (path: DataRoomPath, fileId: string, file: DataRoomFile) => void;
+  moveItem: (sourcePath: DataRoomPath, itemId: string, targetPath: DataRoomPath) => void;
 };
 
 const DataRoomContext = React.createContext<DataRoomContextValue | null>(null);
@@ -216,6 +272,11 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: "REPLACE_FILE", path, fileId, file }),
     []
   );
+  const moveItem = React.useCallback(
+    (sourcePath: DataRoomPath, itemId: string, targetPath: DataRoomPath) =>
+      dispatch({ type: "MOVE_ITEM", sourcePath, itemId, targetPath }),
+    []
+  );
 
   const value: DataRoomContextValue = {
     state,
@@ -226,6 +287,7 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     renameItem,
     deleteItem,
     replaceFile,
+    moveItem,
   };
 
   return (
