@@ -1,12 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Roboto } from "next/font/google";
 import "./globals.css";
-import { SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ToastProvider } from "@/components/ui/toast";
-import { DataRoomProvider } from "@/contexts/dataroom-context";
-import { AppSidebar } from "@/components/app-sidebar";
+import { AppShell } from "@/components/app-shell";
 
 const roboto = Roboto({subsets:['latin'],variable:'--font-sans'});
 
@@ -38,12 +36,7 @@ export default function RootLayout({
         <ThemeProvider defaultTheme="light" storageKey="dataroom-theme">
           <TooltipProvider>
             <ToastProvider>
-              <DataRoomProvider>
-                <SidebarProvider>
-                  <AppSidebar />
-                  {children}
-                </SidebarProvider>
-              </DataRoomProvider>
+              <AppShell>{children}</AppShell>
             </ToastProvider>
           </TooltipProvider>
         </ThemeProvider>
