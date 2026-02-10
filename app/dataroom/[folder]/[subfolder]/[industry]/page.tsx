@@ -110,6 +110,7 @@ export default function IndustryPage() {
   const [uploadDialogOpen, setUploadDialogOpen] = React.useState(false);
   const [previewFile, setPreviewFile] = React.useState<DataRoomFile | null>(null);
   const [previewOpen, setPreviewOpen] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
 
   const existingFileNames = React.useMemo(
     () => new Set(children.filter(isFile).map((f) => f.name)),
@@ -192,12 +193,20 @@ export default function IndustryPage() {
 
   const handleUpload = (files: DataRoomFile[], rawFiles?: File[]) => {
     if (rawFiles?.length) {
+      setUploadError(null);
       uploadFiles(path, rawFiles)
         .then(() => {
           toast.success("Files uploaded");
           setUploadDialogOpen(false);
         })
-        .catch((e) => toast.error(e instanceof Error ? e.message : "Upload failed"));
+        .catch((e) => {
+          const msg = e instanceof Error ? e.message : "Upload failed";
+          if (msg.toLowerCase().includes("don't have permission") || msg.toLowerCase().includes("do not have permission")) {
+            setUploadError(msg);
+          } else {
+            toast.error(msg);
+          }
+        });
     } else {
       addFiles(path, files);
       setUploadDialogOpen(false);
@@ -353,6 +362,7 @@ export default function IndustryPage() {
           onFiles={handleUpload}
           onReplaceWarning={handleOverwriteWarning}
           existingNames={existingFileNames}
+          errorMessage={uploadError}
         />
 
         <div className="flex-1">

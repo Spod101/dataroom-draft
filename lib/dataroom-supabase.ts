@@ -163,12 +163,88 @@ async function getCurrentUserId(): Promise<string | null> {
   return session?.user?.id ?? null;
 }
 
+async function getCurrentUserRole(): Promise<"admin" | "user" | null> {
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+  const { data, error } = await supabase
+    .from("users")
+    .select("role")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data as { role: "admin" | "user" }).role ?? null;
+}
+
+async function canCurrentUserEditFolder(folderId: string): Promise<boolean> {
+  const role = await getCurrentUserRole();
+  if (role === "admin") return true;
+
+  const userId = await getCurrentUserId();
+  if (!userId) return false;
+
+  const { data, error } = await supabase
+    .from("permissions")
+    .select("can_edit")
+    .eq("user_id", userId)
+    .eq("folder_id", folderId)
+    .maybeSingle();
+
+  if (error || !data) return false;
+  return !!(data as { can_edit: boolean | null }).can_edit;
+}
+
+async function canCurrentUserEditFile(fileId: string): Promise<boolean> {
+  const role = await getCurrentUserRole();
+  if (role === "admin") return true;
+
+  const userId = await getCurrentUserId();
+  if (!userId) return false;
+
+  // File-level permission
+  const { data: filePerm, error: filePermErr } = await supabase
+    .from("permissions")
+    .select("can_edit")
+    .eq("user_id", userId)
+    .eq("file_id", fileId)
+    .maybeSingle();
+  if (filePermErr) return false;
+  if (filePerm && (filePerm as { can_edit: boolean | null }).can_edit) return true;
+
+  // Folder-level permission (requires we can read the file row)
+  const { data: fileRow, error: fileRowErr } = await supabase
+    .from("files")
+    .select("folder_id")
+    .eq("id", fileId)
+    .maybeSingle();
+  if (fileRowErr || !fileRow) return false;
+  const folderId = (fileRow as { folder_id: string }).folder_id;
+  return await canCurrentUserEditFolder(folderId);
+}
+
+async function assertCanEditFolder(folderId: string, action: string): Promise<void> {
+  const ok = await canCurrentUserEditFolder(folderId);
+  if (!ok) throw new Error(`You don't have permission to ${action} in this folder.`);
+}
+
+async function assertCanEditFile(fileId: string, action: string): Promise<void> {
+  const ok = await canCurrentUserEditFile(fileId);
+  if (!ok) throw new Error(`You don't have permission to ${action} this file.`);
+}
+
 /** Create a folder. parentFolderId null = root. Returns new folder. */
 export async function createFolder(
   parentFolderId: string | null,
   name: string,
   existingSiblingSlugs: string[] = []
 ): Promise<DataRoomFolder> {
+  // Root folder creation: allow admins only (unless you add a "root edit" concept).
+  if (parentFolderId) {
+    await assertCanEditFolder(parentFolderId, "create folders");
+  } else {
+    const role = await getCurrentUserRole();
+    if (role !== "admin") throw new Error("You don't have permission to create root folders.");
+  }
+
   const slug = uniqueSlug(slugFromName(name), existingSiblingSlugs);
   const now = new Date().toISOString();
   const modifiedBy = await getCurrentUserId();
@@ -203,6 +279,8 @@ export async function getSiblingSlugs(parentFolderId: string | null): Promise<st
 
 /** Upload a single file to storage and insert into files. Returns DataRoomFile. */
 export async function uploadFileToFolder(folderId: string, file: File): Promise<DataRoomFile> {
+  await assertCanEditFolder(folderId, "upload files");
+
   const fileId = crypto.randomUUID();
   const path = `${folderId}/${fileId}/${file.name}`;
 
@@ -236,6 +314,7 @@ export async function uploadFileToFolder(folderId: string, file: File): Promise<
 
 /** Rename a folder; updates slug to keep it unique among siblings. */
 export async function renameFolder(folderId: string, newName: string, siblingSlugs: string[]): Promise<void> {
+  await assertCanEditFolder(folderId, "rename folders");
   const slug = uniqueSlug(slugFromName(newName), siblingSlugs);
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
@@ -247,6 +326,7 @@ export async function renameFolder(folderId: string, newName: string, siblingSlu
 
 /** Soft-delete folder. */
 export async function deleteFolder(folderId: string): Promise<void> {
+  await assertCanEditFolder(folderId, "delete folders");
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("folders")
@@ -257,6 +337,7 @@ export async function deleteFolder(folderId: string): Promise<void> {
 
 /** Rename a file. */
 export async function renameFile(fileId: string, newName: string): Promise<void> {
+  await assertCanEditFile(fileId, "rename");
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("files")
@@ -267,6 +348,7 @@ export async function renameFile(fileId: string, newName: string): Promise<void>
 
 /** Soft-delete file. */
 export async function deleteFile(fileId: string): Promise<void> {
+  await assertCanEditFile(fileId, "delete");
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("files")

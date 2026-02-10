@@ -29,6 +29,8 @@ interface UploadFilesDialogProps {
   onFiles: (files: DataRoomFile[], rawFiles?: File[]) => void;
   onReplaceWarning?: (name: string, files: DataRoomFile[], resolve: (ok: boolean) => void) => void;
   existingNames?: Set<string>;
+  /** Optional error message to show inline in the dialog (e.g. permission errors). */
+  errorMessage?: string | null;
 }
 
 export function UploadFilesDialog({
@@ -37,6 +39,7 @@ export function UploadFilesDialog({
   onFiles,
   onReplaceWarning,
   existingNames = new Set(),
+  errorMessage,
 }: UploadFilesDialogProps) {
   const { state } = useDataRoom();
   const upload = state.upload;
@@ -86,6 +89,12 @@ export function UploadFilesDialog({
             Choose files to upload into this folder. You can drag and drop or click to browse.
           </DialogDescription>
         </DialogHeader>
+
+        {errorMessage && (
+          <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {errorMessage}
+          </div>
+        )}
 
         {upload && (
           <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">

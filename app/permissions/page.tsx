@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -11,291 +11,252 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Switch } from "@/components/ui/switch";
 import { SearchBar } from "@/components/dataroom/search-bar";
 import { 
   MoreHorizontalIcon, 
-  HomeIcon, 
   FolderIcon,
   FileTextIcon,
   ChevronRightIcon,
   ChevronDownIcon,
 } from "lucide-react";
 
-// Users data
-const usersData = {
-  haveAccess: [
-    { id: "1", name: "Emily Grace Thompson", role: "Admin", avatar: "/avatars/emily.jpg" },
-    { id: "2", name: "Oliver Michael Robinson", role: "Editor", avatar: "/avatars/oliver.jpg" },
-    { id: "3", name: "Lucas Daniel Turner", role: "Viewer", avatar: "/avatars/lucas.jpg" },
-  ],
-  dontHaveAccess: [
-    { id: "4", name: "Ava Marie Martinez", role: "Pending", avatar: "/avatars/ava.jpg" },
-    { id: "5", name: "Olivia Claire Williams", role: "Pending", avatar: "/avatars/olivia.jpg" },
-    { id: "6", name: "Emma Grace Carter", role: "Pending", avatar: "/avatars/emma.jpg" },
-    { id: "7", name: "Jackson Andrew Davis", role: "Pending", avatar: "/avatars/jackson.jpg" },
-    { id: "8", name: "Liam Christopher Miller", role: "Pending", avatar: "/avatars/liam.jpg" },
-    { id: "9", name: "Ethan James Smith", role: "Pending", avatar: "/avatars/ethan.jpg" },
-  ]
+import { supabase } from "@/lib/supabase";
+import type { DataRoomFolder, DataRoomFile } from "@/lib/dataroom-types";
+import { isFolder, isFile } from "@/lib/dataroom-types";
+import { fetchDataRoomTree } from "@/lib/dataroom-supabase";
+import { useAuth } from "@/contexts/auth-context";
+
+type PermissionFlags = { edit: boolean };
+type PermissionSet = Record<string, PermissionFlags>;
+
+type PermissionUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
 };
 
-type PermissionSet = Record<string, { view: boolean; save: boolean; upload: boolean }>;
-
-// Default permissions per user (simulating different access levels)
-const defaultUserPermissions: Record<string, PermissionSet> = {
-  // Admin - full access
-  "1": {
-    "home": { view: true, save: true, upload: true },
-    "company-profile": { view: true, save: true, upload: true },
-    "long-version": { view: true, save: true, upload: true },
-    "deck": { view: true, save: true, upload: true },
-    "catalog": { view: true, save: true, upload: true },
-    "presentation": { view: true, save: true, upload: true },
-    "financial-info": { view: true, save: true, upload: true },
-    "contracts": { view: true, save: true, upload: true },
-    "industry-background": { view: true, save: true, upload: true },
-    "human-resources": { view: true, save: true, upload: true },
-    "cv": { view: true, save: true, upload: true },
-    "intellectual-property": { view: true, save: true, upload: true },
-    "specific-industry": { view: true, save: true, upload: true },
-    "contact-us": { view: true, save: true, upload: true },
-  },
-  // Editor - view and save, limited upload
-  "2": {
-    "home": { view: true, save: true, upload: false },
-    "company-profile": { view: true, save: true, upload: false },
-    "long-version": { view: true, save: true, upload: false },
-    "deck": { view: true, save: true, upload: false },
-    "catalog": { view: true, save: true, upload: false },
-    "presentation": { view: true, save: true, upload: false },
-    "financial-info": { view: true, save: false, upload: false },
-    "contracts": { view: true, save: false, upload: false },
-    "industry-background": { view: true, save: true, upload: false },
-    "human-resources": { view: true, save: true, upload: true },
-    "cv": { view: true, save: true, upload: true },
-    "intellectual-property": { view: true, save: false, upload: false },
-    "specific-industry": { view: true, save: true, upload: false },
-    "contact-us": { view: true, save: true, upload: false },
-  },
-  // Viewer - view only
-  "3": {
-    "home": { view: true, save: false, upload: false },
-    "company-profile": { view: true, save: false, upload: false },
-    "long-version": { view: true, save: false, upload: false },
-    "deck": { view: true, save: false, upload: false },
-    "catalog": { view: true, save: false, upload: false },
-    "presentation": { view: true, save: false, upload: false },
-    "financial-info": { view: false, save: false, upload: false },
-    "contracts": { view: false, save: false, upload: false },
-    "industry-background": { view: true, save: false, upload: false },
-    "human-resources": { view: false, save: false, upload: false },
-    "cv": { view: false, save: false, upload: false },
-    "intellectual-property": { view: false, save: false, upload: false },
-    "specific-industry": { view: true, save: false, upload: false },
-    "contact-us": { view: true, save: false, upload: false },
-  },
-  // Pending users - no access
-  "4": {
-    "home": { view: false, save: false, upload: false },
-    "company-profile": { view: false, save: false, upload: false },
-    "long-version": { view: false, save: false, upload: false },
-    "deck": { view: false, save: false, upload: false },
-    "catalog": { view: false, save: false, upload: false },
-    "presentation": { view: false, save: false, upload: false },
-    "financial-info": { view: false, save: false, upload: false },
-    "contracts": { view: false, save: false, upload: false },
-    "industry-background": { view: false, save: false, upload: false },
-    "human-resources": { view: false, save: false, upload: false },
-    "cv": { view: false, save: false, upload: false },
-    "intellectual-property": { view: false, save: false, upload: false },
-    "specific-industry": { view: false, save: false, upload: false },
-    "contact-us": { view: false, save: false, upload: false },
-  },
-  "5": {
-    "home": { view: false, save: false, upload: false },
-    "company-profile": { view: false, save: false, upload: false },
-    "long-version": { view: false, save: false, upload: false },
-    "deck": { view: false, save: false, upload: false },
-    "catalog": { view: false, save: false, upload: false },
-    "presentation": { view: false, save: false, upload: false },
-    "financial-info": { view: false, save: false, upload: false },
-    "contracts": { view: false, save: false, upload: false },
-    "industry-background": { view: false, save: false, upload: false },
-    "human-resources": { view: false, save: false, upload: false },
-    "cv": { view: false, save: false, upload: false },
-    "intellectual-property": { view: false, save: false, upload: false },
-    "specific-industry": { view: false, save: false, upload: false },
-    "contact-us": { view: false, save: false, upload: false },
-  },
-  "6": {
-    "home": { view: false, save: false, upload: false },
-    "company-profile": { view: false, save: false, upload: false },
-    "long-version": { view: false, save: false, upload: false },
-    "deck": { view: false, save: false, upload: false },
-    "catalog": { view: false, save: false, upload: false },
-    "presentation": { view: false, save: false, upload: false },
-    "financial-info": { view: false, save: false, upload: false },
-    "contracts": { view: false, save: false, upload: false },
-    "industry-background": { view: false, save: false, upload: false },
-    "human-resources": { view: false, save: false, upload: false },
-    "cv": { view: false, save: false, upload: false },
-    "intellectual-property": { view: false, save: false, upload: false },
-    "specific-industry": { view: false, save: false, upload: false },
-    "contact-us": { view: false, save: false, upload: false },
-  },
-  "7": {
-    "home": { view: false, save: false, upload: false },
-    "company-profile": { view: false, save: false, upload: false },
-    "long-version": { view: false, save: false, upload: false },
-    "deck": { view: false, save: false, upload: false },
-    "catalog": { view: false, save: false, upload: false },
-    "presentation": { view: false, save: false, upload: false },
-    "financial-info": { view: false, save: false, upload: false },
-    "contracts": { view: false, save: false, upload: false },
-    "industry-background": { view: false, save: false, upload: false },
-    "human-resources": { view: false, save: false, upload: false },
-    "cv": { view: false, save: false, upload: false },
-    "intellectual-property": { view: false, save: false, upload: false },
-    "specific-industry": { view: false, save: false, upload: false },
-    "contact-us": { view: false, save: false, upload: false },
-  },
-  "8": {
-    "home": { view: false, save: false, upload: false },
-    "company-profile": { view: false, save: false, upload: false },
-    "long-version": { view: false, save: false, upload: false },
-    "deck": { view: false, save: false, upload: false },
-    "catalog": { view: false, save: false, upload: false },
-    "presentation": { view: false, save: false, upload: false },
-    "financial-info": { view: false, save: false, upload: false },
-    "contracts": { view: false, save: false, upload: false },
-    "industry-background": { view: false, save: false, upload: false },
-    "human-resources": { view: false, save: false, upload: false },
-    "cv": { view: false, save: false, upload: false },
-    "intellectual-property": { view: false, save: false, upload: false },
-    "specific-industry": { view: false, save: false, upload: false },
-    "contact-us": { view: false, save: false, upload: false },
-  },
-  "9": {
-    "home": { view: false, save: false, upload: false },
-    "company-profile": { view: false, save: false, upload: false },
-    "long-version": { view: false, save: false, upload: false },
-    "deck": { view: false, save: false, upload: false },
-    "catalog": { view: false, save: false, upload: false },
-    "presentation": { view: false, save: false, upload: false },
-    "financial-info": { view: false, save: false, upload: false },
-    "contracts": { view: false, save: false, upload: false },
-    "industry-background": { view: false, save: false, upload: false },
-    "human-resources": { view: false, save: false, upload: false },
-    "cv": { view: false, save: false, upload: false },
-    "intellectual-property": { view: false, save: false, upload: false },
-    "specific-industry": { view: false, save: false, upload: false },
-    "contact-us": { view: false, save: false, upload: false },
-  },
+type PermissionItem = {
+  id: string;
+  name: string;
+  kind: "folder" | "file";
+  children?: PermissionItem[];
 };
 
-// Files/Folders data structure
-const filesStructure = [
-  { 
-    id: "home", 
-    name: "Home", 
-    type: "home",
-    permissions: { view: true, save: true, upload: true },
-  },
-  { 
-    id: "company-profile", 
-    name: "Company Profile", 
-    type: "folder",
-    permissions: { view: true, save: true, upload: false },
-    children: [
-      { id: "long-version", name: "Long Version (PDF)", type: "file", permissions: { view: true, save: false, upload: false } },
-      { id: "deck", name: "Deck (Presentation)", type: "file", permissions: { view: true, save: false, upload: false } },
-    ]
-  },
-  { 
-    id: "catalog", 
-    name: "Catalog", 
-    type: "folder",
-    permissions: { view: true, save: false, upload: false },
-    children: [
-      { id: "presentation", name: "Presentation", type: "file", permissions: { view: true, save: false, upload: false } },
-      { id: "financial-info", name: "Financial Information", type: "file", permissions: { view: true, save: false, upload: false } },
-      { id: "contracts", name: "Contracts", type: "file", permissions: { view: true, save: false, upload: false } },
-      { id: "industry-background", name: "Industry Background", type: "file", permissions: { view: true, save: false, upload: false } },
-      { 
-        id: "human-resources", 
-        name: "Human Resources", 
-        type: "folder",
-        permissions: { view: true, save: false, upload: false },
-        children: [
-          { id: "cv", name: "JasonMcScot_CV.pdf", type: "file", permissions: { view: true, save: true, upload: true } },
-        ]
-      },
-      { id: "intellectual-property", name: "Intellectual Property", type: "file", permissions: { view: true, save: false, upload: false } },
-    ]
-  },
-  { 
-    id: "specific-industry", 
-    name: "Specific Industry", 
-    type: "folder",
-    permissions: { view: true, save: false, upload: false },
-  },
-  { 
-    id: "contact-us", 
-    name: "Contact Us", 
-    type: "folder",
-    permissions: { view: true, save: false, upload: false },
-  },
-];
+function buildPermissionItems(rootFolders: DataRoomFolder[]): {
+  items: PermissionItem[];
+  kindsById: Record<string, "folder" | "file">;
+} {
+  const kindsById: Record<string, "folder" | "file"> = {};
+
+  const folderToItem = (folder: DataRoomFolder): PermissionItem => {
+    const folderItem: PermissionItem = {
+      id: folder.id,
+      name: folder.name,
+      kind: "folder",
+      children: [],
+    };
+    kindsById[folder.id] = "folder";
+
+    const childFolders = folder.children.filter(isFolder);
+    const childFiles = folder.children.filter(isFile) as DataRoomFile[];
+
+    const children: PermissionItem[] = [];
+    for (const f of childFolders) {
+      children.push(folderToItem(f));
+    }
+    for (const file of childFiles) {
+      kindsById[file.id] = "file";
+      children.push({
+        id: file.id,
+        name: file.name,
+        kind: "file",
+      });
+    }
+    if (children.length) folderItem.children = children;
+    return folderItem;
+  };
+
+  const items = rootFolders.map(folderToItem);
+  return { items, kindsById };
+}
 
 export default function PermissionsPage() {
-  const [selectedUser, setSelectedUser] = React.useState(usersData.haveAccess[0]);
+  const { profile, loading } = useAuth();
+  const isAdmin = profile?.role === "admin";
+
+  const [users, setUsers] = React.useState<PermissionUser[]>([]);
+  const [selectedUser, setSelectedUser] = React.useState<PermissionUser | null>(null);
   const [searchUser, setSearchUser] = React.useState("");
   const [searchFile, setSearchFile] = React.useState("");
-  const [expandedFolders, setExpandedFolders] = React.useState<string[]>(["catalog", "human-resources"]);
+  const [expandedFolders, setExpandedFolders] = React.useState<string[]>([]);
+  const [filesTree, setFilesTree] = React.useState<PermissionItem[]>([]);
+  const [itemKinds, setItemKinds] = React.useState<Record<string, "folder" | "file">>({});
+  const [loadingUsers, setLoadingUsers] = React.useState(true);
+  const [loadingTree, setLoadingTree] = React.useState(true);
   
   // Store all user permissions - keyed by user ID
-  const [allUserPermissions, setAllUserPermissions] = React.useState<Record<string, PermissionSet>>(defaultUserPermissions);
+  const [allUserPermissions, setAllUserPermissions] = React.useState<Record<string, PermissionSet>>({});
 
-  // Get current user's permissions
-  const currentPermissions = allUserPermissions[selectedUser.id] || {};
+  const currentPermissions = selectedUser ? allUserPermissions[selectedUser.id] || {} : {};
 
-  const handleSelectUser = (user: typeof usersData.haveAccess[0]) => {
+  // Load users from DB
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadUsers = async () => {
+      setLoadingUsers(true);
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, name, email, role")
+        .order("name", { ascending: true });
+      if (cancelled) return;
+      if (error || !data) {
+        setUsers([]);
+        setSelectedUser(null);
+      } else {
+        const mapped = data as PermissionUser[];
+        setUsers(mapped);
+        if (!selectedUser && mapped.length > 0) {
+          setSelectedUser(mapped[0]);
+        }
+      }
+      setLoadingUsers(false);
+    };
+    void loadUsers();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedUser]);
+
+  // Load folder/file tree from DB
+  React.useEffect(() => {
+    let cancelled = false;
+    const loadTree = async () => {
+      setLoadingTree(true);
+      try {
+        const rootFolders = await fetchDataRoomTree();
+        if (cancelled) return;
+        const { items, kindsById } = buildPermissionItems(rootFolders as DataRoomFolder[]);
+        setFilesTree(items);
+        setItemKinds(kindsById);
+        const initialExpanded = items.filter((i) => i.kind === "folder").map((i) => i.id);
+        setExpandedFolders(initialExpanded);
+      } finally {
+        if (!cancelled) setLoadingTree(false);
+      }
+    };
+    void loadTree();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const loadPermissionsForUser = React.useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from("permissions")
+      .select("folder_id, file_id, can_edit")
+      .eq("user_id", userId);
+    if (error || !data) return;
+    const perms: PermissionSet = {};
+    for (const row of data as {
+      folder_id: string | null;
+      file_id: string | null;
+      can_edit: boolean | null;
+    }[]) {
+      const itemId = row.folder_id ?? row.file_id;
+      if (!itemId) continue;
+      perms[itemId] = {
+        edit: !!row.can_edit,
+      };
+    }
+    setAllUserPermissions((prev) => ({
+      ...prev,
+      [userId]: perms,
+    }));
+  }, []);
+
+  React.useEffect(() => {
+    if (!selectedUser) return;
+    if (allUserPermissions[selectedUser.id]) return;
+    void loadPermissionsForUser(selectedUser.id);
+  }, [selectedUser, allUserPermissions, loadPermissionsForUser]);
+
+  const handleSelectUser = (user: PermissionUser) => {
     setSelectedUser(user);
   };
 
-  const togglePermission = (itemId: string, permissionType: "view" | "save" | "upload") => {
-    setAllUserPermissions(prev => ({
-      ...prev,
-      [selectedUser.id]: {
-        ...prev[selectedUser.id],
-        [itemId]: {
-          ...prev[selectedUser.id]?.[itemId],
-          [permissionType]: !prev[selectedUser.id]?.[itemId]?.[permissionType]
+  const persistPermission = React.useCallback(
+    async (userId: string, itemId: string, flags: PermissionFlags) => {
+      const kind = itemKinds[itemId];
+      if (!kind) return;
+
+      if (!flags.edit) {
+        const { error } = await supabase
+          .from("permissions")
+          .delete()
+          .eq("user_id", userId)
+          .eq(kind === "folder" ? "folder_id" : "file_id", itemId);
+        if (error) {
+          // eslint-disable-next-line no-console
+          console.error("Failed to delete permission", error);
         }
+        return;
       }
-    }));
+
+      const payload: {
+        user_id: string;
+        folder_id: string | null;
+        file_id: string | null;
+        can_edit: boolean;
+      } = {
+        user_id: userId,
+        folder_id: kind === "folder" ? itemId : null,
+        file_id: kind === "file" ? itemId : null,
+        can_edit: flags.edit,
+      };
+
+      const onConflict = kind === "folder" ? "user_id,folder_id" : "user_id,file_id";
+      const { error } = await supabase.from("permissions").upsert(payload, { onConflict });
+      if (error) {
+        // eslint-disable-next-line no-console
+        console.error("Failed to save permission", error);
+      }
+    },
+    [itemKinds]
+  );
+
+  const togglePermission = (itemId: string) => {
+    if (!selectedUser) return;
+    setAllUserPermissions((prev) => {
+      const userPerms = prev[selectedUser.id] || {};
+      const current = userPerms[itemId] || { edit: false };
+      const next: PermissionFlags = {
+        edit: !current.edit,
+      };
+      const updatedUserPerms: PermissionSet = {
+        ...userPerms,
+        [itemId]: next,
+      };
+      void persistPermission(selectedUser.id, itemId, next);
+      return {
+        ...prev,
+        [selectedUser.id]: updatedUserPerms,
+      };
+    });
   };
 
   const toggleFolder = (folderId: string) => {
-    setExpandedFolders(prev => 
-      prev.includes(folderId) 
-        ? prev.filter(id => id !== folderId)
-        : [...prev, folderId]
+    setExpandedFolders((prev) =>
+      prev.includes(folderId) ? prev.filter((id) => id !== folderId) : [...prev, folderId]
     );
   };
 
-  type FileTreeItem = {
-    id: string;
-    name: string;
-    type: "home" | "folder" | "file";
-    children?: FileTreeItem[];
-  };
-
-  const renderFileRow = (item: FileTreeItem, level: number = 0) => {
+  const renderFileRow = (item: PermissionItem, level: number = 0) => {
     const isExpanded = expandedFolders.includes(item.id);
     const hasChildren = !!item.children && item.children.length > 0;
-    const itemPermissions = currentPermissions[item.id] || { view: false, save: false, upload: false };
+    const itemPermissions = currentPermissions[item.id] || { edit: false };
     
     return (
       <React.Fragment key={item.id}>
@@ -323,9 +284,7 @@ export default function PermissionsPage() {
 
           {/* Icon */}
           <div className="w-6 flex-shrink-0">
-            {item.type === "home" ? (
-              <HomeIcon className="h-4 w-4 text-muted-foreground" />
-            ) : item.type === "folder" ? (
+            {item.kind === "folder" ? (
               <FolderIcon className="h-4 w-4 text-primary" />
             ) : (
               <FileTextIcon className="h-4 w-4 text-muted-foreground" />
@@ -336,20 +295,10 @@ export default function PermissionsPage() {
           <span className="flex-1 text-sm truncate ml-2">{item.name}</span>
 
           {/* Permissions toggles */}
-          <div className="flex items-center gap-6 pr-2">
+          <div className="flex items-center pr-2">
             <Switch 
-              checked={itemPermissions.view}
-              onCheckedChange={() => togglePermission(item.id, "view")}
-              className="data-[state=checked]:bg-primary"
-            />
-            <Switch 
-              checked={itemPermissions.save}
-              onCheckedChange={() => togglePermission(item.id, "save")}
-              className="data-[state=checked]:bg-primary"
-            />
-            <Switch 
-              checked={itemPermissions.upload}
-              onCheckedChange={() => togglePermission(item.id, "upload")}
+              checked={itemPermissions.edit}
+              onCheckedChange={() => togglePermission(item.id)}
               className="data-[state=checked]:bg-primary"
             />
           </div>
@@ -365,6 +314,50 @@ export default function PermissionsPage() {
     );
   };
 
+  const normalizedSearchUser = searchUser.trim().toLowerCase();
+  const filteredUsers = users.filter((u) =>
+    normalizedSearchUser
+      ? u.name.toLowerCase().includes(normalizedSearchUser) ||
+        u.email.toLowerCase().includes(normalizedSearchUser)
+      : true
+  );
+
+  const usersWithAccessIds = new Set(
+    filteredUsers
+      .filter((u) => {
+        const perms = allUserPermissions[u.id];
+        if (!perms) return false;
+        return Object.values(perms).some((p) => p.edit);
+      })
+      .map((u) => u.id)
+  );
+
+  const usersWithAccess = filteredUsers.filter((u) => usersWithAccessIds.has(u.id));
+  const usersWithoutAccess = filteredUsers.filter((u) => !usersWithAccessIds.has(u.id));
+
+  if (!loading && !isAdmin) {
+    return (
+      <SidebarInset>
+        <header className="bg-background sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 h-4" />
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbPage>Permissions</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </header>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <p className="text-sm text-muted-foreground">
+            Only administrators can manage permissions. You have view-only access to this page.
+          </p>
+        </div>
+      </SidebarInset>
+    );
+  }
+
   return (
     <SidebarInset>
       <header className="bg-background sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
@@ -378,7 +371,7 @@ export default function PermissionsPage() {
           </BreadcrumbList>
         </Breadcrumb>
       </header>
-      
+
       <div className="flex flex-1 p-4 md:p-6 gap-4">
         {/* Left Panel - Users */}
         <Card className="w-[400px] flex-shrink-0 flex flex-col">
@@ -398,32 +391,52 @@ export default function PermissionsPage() {
 
             {/* Have Access Section */}
             <div className="px-4 pb-2">
-              <p className="text-xs text-muted-foreground">Have access</p>
+              <p className="text-xs text-muted-foreground">Editors</p>
             </div>
             <div className="space-y-1 px-2">
-              {usersData.haveAccess.map((user) => (
+              {loadingUsers && (
+                <p className="text-xs text-muted-foreground px-2 pb-2">Loading users…</p>
+              )}
+              {!loadingUsers && usersWithAccess.length === 0 && (
+                <p className="text-xs text-muted-foreground px-2 pb-2">
+                  No users with explicit permissions yet.
+                </p>
+              )}
+              {usersWithAccess.map((user) => (
                 <div
                   key={user.id}
                   onClick={() => handleSelectUser(user)}
                   className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
-                    selectedUser.id === user.id 
-                      ? 'bg-primary text-primary-foreground' 
-                      : 'hover:bg-accent'
+                    selectedUser && selectedUser.id === user.id
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-accent"
                   }`}
                 >
                   <Avatar className="h-10 w-10">
-                    <AvatarImage src={user.avatar} />
-                    <AvatarFallback className={selectedUser.id === user.id ? 'bg-primary-foreground text-primary' : ''}>
-                      {user.name.split(' ').map(n => n[0]).join('')}
+                    <AvatarFallback
+                      className={
+                        selectedUser && selectedUser.id === user.id
+                          ? "bg-primary-foreground text-primary"
+                          : ""
+                      }
+                    >
+                      {user.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{user.name}</p>
-                    <p className={`text-xs truncate ${
-                      selectedUser.id === user.id 
-                        ? 'text-primary-foreground/70' 
-                        : 'text-muted-foreground'
-                    }`}>{user.role}</p>
+                    <p
+                      className={`text-xs truncate ${
+                        selectedUser && selectedUser.id === user.id
+                          ? "text-primary-foreground/70"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {user.role}
+                    </p>
                   </div>
                   <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
                     <MoreHorizontalIcon className="h-4 w-4" />
@@ -434,32 +447,49 @@ export default function PermissionsPage() {
 
             {/* Don't Have Access Section */}
             <div className="px-4 py-2 mt-4">
-              <p className="text-xs text-muted-foreground">Don&apos;t have access</p>
+              <p className="text-xs text-muted-foreground">View only</p>
             </div>
             <div className="space-y-1 px-2 flex-1 overflow-auto">
-              {usersData.dontHaveAccess.map((user) => (
+              {!loadingUsers && usersWithoutAccess.length === 0 && (
+                <p className="text-xs text-muted-foreground px-2 pb-2">
+                  Everyone has explicit permissions or no users found.
+                </p>
+              )}
+              {usersWithoutAccess.map((user) => (
                 <div
                   key={user.id}
                   onClick={() => handleSelectUser(user)}
                   className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors ${
-                    selectedUser.id === user.id 
-                      ? 'bg-primary text-primary-foreground' 
-                      : 'hover:bg-accent'
+                    selectedUser && selectedUser.id === user.id
+                      ? "bg-primary text-primary-foreground"
+                      : "hover:bg-accent"
                   }`}
                 >
                   <Avatar className="h-10 w-10">
-                    <AvatarImage src={user.avatar} />
-                    <AvatarFallback className={selectedUser.id === user.id ? 'bg-primary-foreground text-primary' : ''}>
-                      {user.name.split(' ').map(n => n[0]).join('')}
+                    <AvatarFallback
+                      className={
+                        selectedUser && selectedUser.id === user.id
+                          ? "bg-primary-foreground text-primary"
+                          : ""
+                      }
+                    >
+                      {user.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{user.name}</p>
-                    <p className={`text-xs truncate ${
-                      selectedUser.id === user.id 
-                        ? 'text-primary-foreground/70' 
-                        : 'text-muted-foreground'
-                    }`}>{user.role}</p>
+                    <p
+                      className={`text-xs truncate ${
+                        selectedUser && selectedUser.id === user.id
+                          ? "text-primary-foreground/70"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {user.role}
+                    </p>
                   </div>
                   <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
                     <MoreHorizontalIcon className="h-4 w-4" />
@@ -489,16 +519,22 @@ export default function PermissionsPage() {
             {/* Column Headers */}
             <div className="flex items-center py-2 px-4 border-b text-sm text-muted-foreground bg-muted/30">
               <span className="flex-1">Permissions</span>
-              <div className="flex items-center gap-6 pr-2">
-                <span className="w-[44px] text-center">View</span>
-                <span className="w-[44px] text-center">Save</span>
-                <span className="w-[44px] text-center">Upload</span>
+              <div className="pr-2">
+                <span className="w-[44px] text-center inline-block">Edit</span>
               </div>
             </div>
 
             {/* Files Tree */}
             <div className="flex-1 overflow-auto">
-              {filesStructure.map((item) => renderFileRow(item))}
+              {loadingTree && (
+                <p className="text-xs text-muted-foreground px-4 py-3">Loading files…</p>
+              )}
+              {!loadingTree && filesTree.length === 0 && (
+                <p className="text-xs text-muted-foreground px-4 py-3">
+                  No folders/files found in the data room yet.
+                </p>
+              )}
+              {!loadingTree && filesTree.map((item) => renderFileRow(item))}
             </div>
           </CardContent>
         </Card>
