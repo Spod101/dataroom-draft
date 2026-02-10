@@ -15,6 +15,7 @@ import {
   SunIcon,
   MoonIcon,
   LogOutIcon,
+  Trash2Icon,
 } from "lucide-react"
 import { useAuth } from "@/contexts/auth-context"
 
@@ -64,6 +65,11 @@ const navMain = [
       title: "Audit",
       url: "/audit",
       icon: ClipboardListIcon,
+    },
+    {
+      title: "Trash",
+      url: "/trash",
+      icon: Trash2Icon,
     },
   ]
 

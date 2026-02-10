@@ -479,3 +479,98 @@ export async function deleteFile(fileId: string): Promise<void> {
     fileId,
   });
 }
+
+// -------- Trash helpers --------
+
+type TrashFolderRow = {
+  id: string;
+  parent_folder_id: string | null;
+  name: string;
+  deleted_at: string | null;
+};
+
+type TrashFileRow = {
+  id: string;
+  folder_id: string;
+  name: string;
+  deleted_at: string | null;
+};
+
+export type TrashSummary = {
+  folders: TrashFolderRow[];
+  files: TrashFileRow[];
+};
+
+/** List soft-deleted folders and files for the current project. */
+export async function listTrash(): Promise<TrashSummary> {
+  const [foldersRes, filesRes] = await Promise.all([
+    supabase
+      .from("folders")
+      .select("id, parent_folder_id, name, deleted_at")
+      .eq("is_deleted", true)
+      .order("deleted_at", { ascending: false }),
+    supabase
+      .from("files")
+      .select("id, folder_id, name, deleted_at")
+      .eq("is_deleted", true)
+      .order("deleted_at", { ascending: false }),
+  ]);
+
+  if (foldersRes.error) throw new Error(foldersRes.error.message);
+  if (filesRes.error) throw new Error(filesRes.error.message);
+
+  return {
+    folders: (foldersRes.data ?? []) as TrashFolderRow[],
+    files: (filesRes.data ?? []) as TrashFileRow[],
+  };
+}
+
+/** Restore a soft-deleted folder from trash. */
+export async function restoreFolder(folderId: string): Promise<void> {
+  await assertCanEditFolder(folderId, "restore folders");
+  const { error } = await supabase
+    .from("folders")
+    .update({ is_deleted: false, deleted_at: null })
+    .eq("id", folderId);
+  if (error) throw new Error(error.message);
+  await logAuditEvent("folder.restore", "folder", {
+    targetId: folderId,
+    folderId,
+  });
+}
+
+/** Restore a soft-deleted file from trash. */
+export async function restoreFile(fileId: string): Promise<void> {
+  await assertCanEditFile(fileId, "restore");
+  const { error } = await supabase
+    .from("files")
+    .update({ is_deleted: false, deleted_at: null })
+    .eq("id", fileId);
+  if (error) throw new Error(error.message);
+  await logAuditEvent("file.restore", "file", {
+    targetId: fileId,
+    fileId,
+  });
+}
+
+/** Permanently delete a folder (admin / editor only, RLS enforced). */
+export async function hardDeleteFolder(folderId: string): Promise<void> {
+  await assertCanEditFolder(folderId, "permanently delete folders");
+  const { error } = await supabase.from("folders").delete().eq("id", folderId);
+  if (error) throw new Error(error.message);
+  await logAuditEvent("folder.hard_delete", "folder", {
+    targetId: folderId,
+    folderId,
+  });
+}
+
+/** Permanently delete a file (admin / editor only, RLS enforced). */
+export async function hardDeleteFile(fileId: string): Promise<void> {
+  await assertCanEditFile(fileId, "permanently delete");
+  const { error } = await supabase.from("files").delete().eq("id", fileId);
+  if (error) throw new Error(error.message);
+  await logAuditEvent("file.hard_delete", "file", {
+    targetId: fileId,
+    fileId,
+  });
+}
