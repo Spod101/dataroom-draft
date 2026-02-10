@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -15,188 +15,16 @@ import { SearchBar } from "@/components/dataroom/search-bar";
 import { FilterSelect } from "@/components/dataroom/filter-select";
 import { DownloadButton } from "@/components/dataroom/download-button";
 import { ChevronDownIcon } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
-// Members/Users data - same as permissions
-const members = [
-  { id: "1", name: "Emily Grace Thompson" },
-  { id: "2", name: "Oliver Michael Robinson" },
-  { id: "3", name: "Lucas Daniel Turner" },
-  { id: "4", name: "Ava Marie Martinez" },
-  { id: "5", name: "Sophia Olivia Hernandez" },
-  { id: "6", name: "Benjamin Alexander Davis" },
-];
+type AuditDisplayRow = {
+  id: string;
+  date: string;
+  member: string;
+  actionLabel: string;
+  description: string;
+};
 
-// Action types
-const actionTypes = [
-  { id: "all", name: "All" },
-  { id: "upload", name: "Upload" },
-  { id: "create", name: "Create" },
-  { id: "rename", name: "Rename" },
-  { id: "access", name: "Access" },
-  { id: "delete", name: "Delete" },
-  { id: "download", name: "Download" },
-];
-
-// Users who can be affected
-const usersAffected = [
-  { id: "all", name: "All" },
-  { id: "georges", name: "Georges Embolo" },
-  { id: "lucas", name: "Lucas Miller" },
-  { id: "noah", name: "Noah Smith" },
-  { id: "mia", name: "Mia Wilson" },
-  { id: "benjamin", name: "Benjamin Taylor" },
-  { id: "emma", name: "Emma Martinez" },
-];
-
-// Audit log data - matching data room files
-const auditLogs = [
-  {
-    id: 1,
-    date: "19/08/2022",
-    member: "Benjamin Alexander Davis",
-    action: "Upload",
-    description: 'Uploaded "Financialpromotion2023.pdf"',
-    userAffected: null,
-  },
-  {
-    id: 2,
-    date: "05/12/2023",
-    member: "Sophia Olivia Hernandez",
-    action: "Create",
-    description: 'Created Folder "Financial Promotion"',
-    userAffected: null,
-  },
-  {
-    id: 3,
-    date: "18/09/2023",
-    member: "Benjamin Alexander Davis",
-    action: "Rename",
-    description: 'Renamed Folder "HR" into "Human Resources"',
-    userAffected: null,
-  },
-  {
-    id: 4,
-    date: "22/07/2023",
-    member: "Emily Elizabeth Thompson",
-    action: "Access",
-    description: 'Give access to "report.pdf" to user Georges Embolo',
-    userAffected: "Georges Embolo",
-  },
-  {
-    id: 5,
-    date: "22/07/2023",
-    member: "Emily Elizabeth Thompson",
-    action: "Access",
-    description: 'Give access to "report.pdf" to user Lucas Miller',
-    userAffected: "Lucas Miller",
-  },
-  {
-    id: 6,
-    date: "22/07/2023",
-    member: "Emily Elizabeth Thompson",
-    action: "Access",
-    description: 'Give access to "report.pdf" to user Noah Smith',
-    userAffected: "Noah Smith",
-  },
-  {
-    id: 7,
-    date: "22/07/2023",
-    member: "Emily Elizabeth Thompson",
-    action: "Access",
-    description: 'Give access to "report.pdf" to user Mia Wilson',
-    userAffected: "Mia Wilson",
-  },
-  {
-    id: 8,
-    date: "22/07/2023",
-    member: "Emily Elizabeth Thompson",
-    action: "Access",
-    description: 'Give access to "report.pdf" to user Benjamin Taylor',
-    userAffected: "Benjamin Taylor",
-  },
-  {
-    id: 9,
-    date: "22/07/2023",
-    member: "Emily Elizabeth Thompson",
-    action: "Access",
-    description: 'Give access to "report.pdf" to user Emma Martinez',
-    userAffected: "Emma Martinez",
-  },
-  {
-    id: 10,
-    date: "29/06/2023",
-    member: "Sophia Olivia Hernandez",
-    action: "Create",
-    description: 'Created Folder "Financial Model"',
-    userAffected: null,
-  },
-  {
-    id: 11,
-    date: "29/06/2023",
-    member: "Sophia Olivia Hernandez",
-    action: "Create",
-    description: 'Created Folder "Industry Background"',
-    userAffected: null,
-  },
-  {
-    id: 12,
-    date: "29/06/2023",
-    member: "Sophia Olivia Hernandez",
-    action: "Create",
-    description: 'Created Folder "Presentation"',
-    userAffected: null,
-  },
-  {
-    id: 13,
-    date: "29/06/2023",
-    member: "Sophia Olivia Hernandez",
-    action: "Create",
-    description: 'Created Folder "Financial Information"',
-    userAffected: null,
-  },
-  {
-    id: 14,
-    date: "29/06/2023",
-    member: "Sophia Olivia Hernandez",
-    action: "Create",
-    description: 'Created Folder "Contracts"',
-    userAffected: null,
-  },
-  {
-    id: 15,
-    date: "28/06/2023",
-    member: "Benjamin Alexander Davis",
-    action: "Upload",
-    description: 'Uploaded "Company_Profile_2023.pdf"',
-    userAffected: null,
-  },
-  {
-    id: 16,
-    date: "28/06/2023",
-    member: "Benjamin Alexander Davis",
-    action: "Upload",
-    description: 'Uploaded "Product_Catalog.pdf"',
-    userAffected: null,
-  },
-  {
-    id: 17,
-    date: "27/06/2023",
-    member: "Oliver Michael Robinson",
-    action: "Download",
-    description: 'Downloaded "Long Version (PDF)"',
-    userAffected: null,
-  },
-  {
-    id: 18,
-    date: "27/06/2023",
-    member: "Lucas Daniel Turner",
-    action: "Download",
-    description: 'Downloaded "Deck (Presentation)"',
-    userAffected: null,
-  },
-];
-
-// Action badge styles
 const getActionStyle = (action: string) => {
   switch (action.toLowerCase()) {
     case "upload":
@@ -205,8 +33,6 @@ const getActionStyle = (action: string) => {
       return "bg-green-100 text-green-700 border-green-200";
     case "rename":
       return "bg-orange-100 text-orange-700 border-orange-200";
-    case "access":
-      return "bg-purple-100 text-purple-700 border-purple-200";
     case "delete":
       return "bg-red-100 text-red-700 border-red-200";
     case "download":
@@ -216,29 +42,158 @@ const getActionStyle = (action: string) => {
   }
 };
 
+function formatActionLabel(action: string): string {
+  if (action.startsWith("file.")) {
+    const kind = action.slice("file.".length);
+    if (kind === "upload") return "Upload";
+    if (kind === "rename") return "Rename";
+    if (kind === "delete") return "Delete";
+    if (kind === "download") return "Download";
+  }
+  if (action.startsWith("folder.")) {
+    const kind = action.slice("folder.".length);
+    if (kind === "create") return "Create";
+    if (kind === "rename") return "Rename";
+    if (kind === "delete") return "Delete";
+  }
+  return action;
+}
+
 export default function AuditPage() {
   const [searchTerm, setSearchTerm] = React.useState("");
   const [memberFilter, setMemberFilter] = React.useState("all");
   const [actionFilter, setActionFilter] = React.useState("all");
-  const [userAffectedFilter, setUserAffectedFilter] = React.useState("all");
-  const [dateRange, setDateRange] = React.useState("11/01/2019 - 11/01/2024");
+  const [dateRange] = React.useState("Last 30 days");
 
-  // Filter logs based on selections
-  const filteredLogs = auditLogs.filter(log => {
-    const matchesSearch = searchTerm === "" || 
+  const [rows, setRows] = React.useState<AuditDisplayRow[]>([]);
+  const [members, setMembers] = React.useState<string[]>([]);
+  const [actions, setActions] = React.useState<string[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    async function loadAudit() {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data, error: auditError } = await supabase
+          .from("audit_log")
+          .select("id, created_at, action, target_type, user_id, file_id, folder_id, details")
+          .order("created_at", { ascending: false })
+          .limit(200);
+
+        if (auditError) throw auditError;
+
+        const audit = data ?? [];
+        const userIds = Array.from(
+          new Set(
+            audit
+              .map((r) => r.user_id as string | null)
+              .filter((v): v is string => !!v)
+          )
+        );
+        const fileIds = Array.from(
+          new Set(
+            audit
+              .map((r) => r.file_id as string | null)
+              .filter((v): v is string => !!v)
+          )
+        );
+        const folderIds = Array.from(
+          new Set(
+            audit
+              .map((r) => r.folder_id as string | null)
+              .filter((v): v is string => !!v)
+          )
+        );
+
+        const [usersRes, filesRes, foldersRes] = await Promise.all([
+          userIds.length
+            ? supabase.from("users").select("id, name").in("id", userIds)
+            : Promise.resolve({ data: [], error: null }),
+          fileIds.length
+            ? supabase.from("files").select("id, name").in("id", fileIds)
+            : Promise.resolve({ data: [], error: null }),
+          folderIds.length
+            ? supabase.from("folders").select("id, name").in("id", folderIds)
+            : Promise.resolve({ data: [], error: null }),
+        ]);
+
+        if (usersRes.error) throw usersRes.error;
+        if (filesRes.error) throw filesRes.error;
+        if (foldersRes.error) throw foldersRes.error;
+
+        const userMap = new Map<string, string>();
+        for (const u of usersRes.data ?? []) {
+          userMap.set((u as any).id, ((u as any).name as string | null) ?? "Unknown");
+        }
+
+        const fileMap = new Map<string, string>();
+        for (const f of filesRes.data ?? []) {
+          fileMap.set((f as any).id, (f as any).name as string);
+        }
+
+        const folderMap = new Map<string, string>();
+        for (const f of foldersRes.data ?? []) {
+          folderMap.set((f as any).id, (f as any).name as string);
+        }
+
+        const displayRows: AuditDisplayRow[] = (audit as any[]).map((row) => {
+          const member = (row.user_id && userMap.get(row.user_id)) || "Unknown user";
+          const actionLabel = formatActionLabel(row.action as string);
+
+          const fileName = row.file_id ? fileMap.get(row.file_id) : undefined;
+          const folderName = row.folder_id ? folderMap.get(row.folder_id) : undefined;
+          let description = "";
+
+          if (row.target_type === "file" && fileName) {
+            if (row.action === "file.upload") description = `Uploaded "${fileName}"`;
+            else if (row.action === "file.rename") description = `Renamed file "${fileName}"`;
+            else if (row.action === "file.delete") description = `Deleted file "${fileName}"`;
+            else if (row.action === "file.download") description = `Downloaded "${fileName}"`;
+            else description = `${row.action} "${fileName}"`;
+          } else if (row.target_type === "folder" && folderName) {
+            if (row.action === "folder.create") description = `Created folder "${folderName}"`;
+            else if (row.action === "folder.rename") description = `Renamed folder "${folderName}"`;
+            else if (row.action === "folder.delete") description = `Deleted folder "${folderName}"`;
+            else description = `${row.action} "${folderName}"`;
+          } else {
+            description = row.action as string;
+          }
+
+          return {
+            id: row.id as string,
+            date: new Date(row.created_at as string).toLocaleString(),
+            member,
+            actionLabel,
+            description,
+          };
+        });
+
+        setRows(displayRows);
+        setMembers(Array.from(new Set(displayRows.map((r) => r.member))).sort());
+        setActions(Array.from(new Set(displayRows.map((r) => r.actionLabel))).sort());
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load audit log");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadAudit();
+  }, []);
+
+  const filteredLogs = rows.filter((log) => {
+    const matchesSearch =
+      searchTerm === "" ||
       log.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
       log.member.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesMember = memberFilter === "all" || 
-      log.member.toLowerCase().includes(memberFilter.toLowerCase());
-    
-    const matchesAction = actionFilter === "all" || 
-      log.action.toLowerCase() === actionFilter.toLowerCase();
-    
-    const matchesUserAffected = userAffectedFilter === "all" || 
-      (log.userAffected && log.userAffected.toLowerCase().includes(userAffectedFilter.toLowerCase()));
 
-    return matchesSearch && matchesMember && matchesAction && (userAffectedFilter === "all" || matchesUserAffected);
+    const matchesMember = memberFilter === "all" || log.member === memberFilter;
+    const matchesAction =
+      actionFilter === "all" || log.actionLabel.toLowerCase() === actionFilter.toLowerCase();
+
+    return matchesSearch && matchesMember && matchesAction;
   });
 
   return (
@@ -254,97 +209,99 @@ export default function AuditPage() {
           </BreadcrumbList>
         </Breadcrumb>
       </header>
-      
+
       <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
-        {/* Filters Row - same bubble style as Data Room controls */}
         <div className="bg-background rounded-xl border border-primary/20 shadow-sm p-3 hover:border-primary/40 transition-colors">
           <div className="flex flex-wrap items-center gap-3">
-            {/* Members Filter */}
             <FilterSelect
               label="Members"
               value={memberFilter}
               onValueChange={setMemberFilter}
               options={[
                 { id: "all", name: "All" },
-                ...members.map(m => ({ id: m.name, name: m.name }))
+                ...members.map((name) => ({ id: name, name })),
               ]}
             />
 
-            {/* Actions Filter */}
             <FilterSelect
               label="Actions"
               value={actionFilter}
               onValueChange={setActionFilter}
-              options={actionTypes}
+              options={[
+                { id: "all", name: "All" },
+                ...actions.map((name) => ({ id: name.toLowerCase(), name })),
+              ]}
             />
 
-            {/* Users Affected Filter */}
-            <FilterSelect
-              label="Users"
-              value={userAffectedFilter}
-              onValueChange={setUserAffectedFilter}
-              options={usersAffected}
-            />
-
-            {/* Period Filter */}
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Period</span>
-              <Button variant="outline" size="sm" className="h-9 gap-2 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary/50">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 gap-2 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary/50"
+              >
                 {dateRange}
                 <ChevronDownIcon className="h-4 w-4" />
               </Button>
             </div>
 
-            {/* Download Button - same outline style as Data Room */}
             <div className="ml-auto">
               <DownloadButton showDropdown />
             </div>
           </div>
         </div>
 
-        {/* Search Bar */}
         <SearchBar
           placeholder="Search audit logs..."
           value={searchTerm}
           onSearch={setSearchTerm}
         />
 
-        {/* Audit Table */}
         <Card className="border-primary/20 flex-1">
           <CardContent className="p-0">
-            {/* Table Header */}
-            <div className="grid grid-cols-[100px_1fr_100px_1fr_150px] gap-4 px-6 py-3 border-b bg-muted/30 text-sm text-muted-foreground">
+            <div className="grid grid-cols-[160px_1fr_120px_2fr] gap-4 px-6 py-3 border-b bg-muted/30 text-sm text-muted-foreground">
               <div>Date</div>
               <div>Member</div>
               <div>Action</div>
               <div>Description</div>
-              <div>User Affected</div>
             </div>
 
-            {/* Table Body */}
             <div className="divide-y">
-              {filteredLogs.map((log) => (
-                <div 
-                  key={log.id} 
-                  className="grid grid-cols-[100px_1fr_100px_1fr_150px] gap-4 px-6 py-4 hover:bg-accent/50 transition-colors items-center"
-                >
-                  <div className="text-sm text-muted-foreground">{log.date}</div>
-                  <div className="text-sm font-medium">{log.member}</div>
-                  <div>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getActionStyle(log.action)}`}>
-                      {log.action}
-                    </span>
-                  </div>
-                  <div className="text-sm">{log.description}</div>
-                  <div className="text-sm text-primary">
-                    {log.userAffected || <span className="text-muted-foreground">none</span>}
-                  </div>
+              {loading && (
+                <div className="flex items-center justify-center py-12 text-muted-foreground">
+                  Loading audit logs...
                 </div>
-              ))}
+              )}
+              {!loading &&
+                !error &&
+                filteredLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    className="grid grid-cols-[160px_1fr_120px_2fr] gap-4 px-6 py-4 hover:bg-accent/50 transition-colors items-center"
+                  >
+                    <div className="text-sm text-muted-foreground">{log.date}</div>
+                    <div className="text-sm font-medium">{log.member}</div>
+                    <div>
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getActionStyle(
+                          log.actionLabel
+                        )}`}
+                      >
+                        {log.actionLabel}
+                      </span>
+                    </div>
+                    <div className="text-sm">{log.description}</div>
+                  </div>
+                ))}
             </div>
 
-            {/* Empty State */}
-            {filteredLogs.length === 0 && (
+            {!loading && error && (
+              <div className="flex items-center justify-center py-12 text-muted-foreground">
+                Failed to load audit logs: {error}
+              </div>
+            )}
+
+            {!loading && !error && filteredLogs.length === 0 && (
               <div className="flex items-center justify-center py-12 text-muted-foreground">
                 No audit logs found matching your filters.
               </div>

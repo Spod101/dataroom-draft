@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -10,245 +10,222 @@ import {
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SearchBar } from "@/components/dataroom/search-bar";
-import { 
-  HomeIcon, 
-  FolderIcon,
-  FileTextIcon,
-  ChevronRightIcon,
-  ChevronDownIcon,
-  UsersIcon,
-  SaveIcon,
-  ClockIcon,
-  LinkIcon,
-} from "lucide-react";
+import { FileTextIcon, UsersIcon, EyeIcon, DownloadIcon } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
-// Files/Folders data structure for the tree - matching Data Room structure
-const filesStructure = [
-  { 
-    id: "home", 
-    name: "Home", 
-    type: "home",
-  },
-  { 
-    id: "company-profile", 
-    name: "Company Profile", 
-    type: "folder",
-    children: [
-      { id: "long-version", name: "Long Version (PDF)", type: "file" },
-      { id: "deck-presentation", name: "Deck (Presentation)", type: "file" },
-      { id: "short-one-pager", name: "Short One-Pager (PDF)", type: "file" },
-      { id: "videos", name: "Videos", type: "file" },
-      { id: "proposal", name: "Proposal (Staff Augmentation)", type: "file" },
-    ]
-  },
-  { 
-    id: "catalog", 
-    name: "Catalog", 
-    type: "folder",
-    children: [
-      { id: "product-link", name: "Product Link", type: "link" },
-      { id: "presentation-deck", name: "Presentation Deck", type: "file" },
-      { id: "product-videos", name: "Product Videos", type: "file" },
-    ]
-  },
-  { 
-    id: "specific-industry", 
-    name: "Specific Industry", 
-    type: "folder",
-    children: [
-      { 
-        id: "private-sector", 
-        name: "Private Sector", 
-        type: "folder",
-        children: [
-          { 
-            id: "education", 
-            name: "Education", 
-            type: "folder",
-            children: [
-              { id: "edu-catalog", name: "Catalog", type: "folder" },
-              { id: "edu-proposals", name: "Proposals", type: "file" },
-            ]
-          },
-          { 
-            id: "telecommunications", 
-            name: "Telecommunications", 
-            type: "folder",
-            children: [
-              { id: "telecom-catalog", name: "Catalog", type: "folder" },
-              { id: "telecom-proposals", name: "Proposals", type: "file" },
-            ]
-          },
-        ]
-      },
-      { 
-        id: "lgu", 
-        name: "LGU", 
-        type: "folder",
-        children: [
-          { 
-            id: "government", 
-            name: "Government Agencies", 
-            type: "folder",
-            children: [
-              { id: "gov-catalog", name: "Catalog", type: "folder" },
-              { id: "gov-proposals", name: "Proposals", type: "file" },
-            ]
-          },
-          { 
-            id: "lgu-education", 
-            name: "Education (LGU)", 
-            type: "folder",
-            children: [
-              { id: "lgu-edu-catalog", name: "Catalog", type: "folder" },
-              { id: "lgu-edu-proposals", name: "Proposals", type: "file" },
-            ]
-          },
-        ]
-      },
-    ]
-  },
-  { 
-    id: "contact-us", 
-    name: "Contact Us", 
-    type: "folder",
-    children: [
-      { id: "admin-info", name: "Data Room Admin Info", type: "file" },
-    ]
-  },
-];
-
-// User activity data
-const userActivity = [
-  { 
-    id: "1", 
-    name: "Emily Grace Thompson", 
-    company: "Quantum Ventures", 
-    avatar: "/avatars/emily.jpg",
-    views: 45,
-    totalTimeSpend: "21:41 min",
-    saved: true
-  },
-  { 
-    id: "2", 
-    name: "Oliver Michael Robinson", 
-    company: "EcoSolutions Capital", 
-    avatar: "/avatars/oliver.jpg",
-    views: 27,
-    totalTimeSpend: "10:00 min",
-    saved: false
-  },
-  { 
-    id: "3", 
-    name: "Lucas Daniel Turner", 
-    company: "RoboRevolution Partners", 
-    avatar: "/avatars/lucas.jpg",
-    views: 11,
-    totalTimeSpend: "03:27 min",
-    saved: false
-  },
-];
-
-// Chart data points (simulated)
-const chartData = [
-  10, 15, 12, 18, 22, 20, 25, 28, 24, 30, 26, 32, 28, 35, 30, 38, 34, 40, 36, 42
-];
-
-type FileTreeItem = {
+type FileSummary = {
   id: string;
   name: string;
-  type: "home" | "folder" | "file" | "link";
-  children?: FileTreeItem[];
+  folderName: string | null;
+  views: number;
+  downloads: number;
+};
+
+type UserFileStats = {
+  userId: string | null;
+  userName: string;
+  views: number;
+  downloads: number;
 };
 
 export default function InsightsPage() {
+  const [fileSummaries, setFileSummaries] = React.useState<FileSummary[]>([]);
+  const [selectedFileId, setSelectedFileId] = React.useState<string | null>(null);
+  const [userStats, setUserStats] = React.useState<UserFileStats[]>([]);
   const [searchFile, setSearchFile] = React.useState("");
   const [searchUser, setSearchUser] = React.useState("");
-  const [expandedFolders, setExpandedFolders] = React.useState<string[]>(["company-profile", "catalog"]);
-  const [selectedFile, setSelectedFile] = React.useState<string>("long-version");
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
-  const toggleFolder = (folderId: string) => {
-    setExpandedFolders(prev => 
-      prev.includes(folderId) 
-        ? prev.filter(id => id !== folderId)
-        : [...prev, folderId]
+  React.useEffect(() => {
+    async function loadInsights() {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data: events, error: eventsError } = await supabase
+          .from("file_events")
+          .select("id, created_at, event_type, file_id, user_id, folder_id")
+          .order("created_at", { ascending: false })
+          .limit(1000);
+
+        if (eventsError) throw eventsError;
+
+        const ev = (events ?? []) as any[];
+        if (!ev.length) {
+          setFileSummaries([]);
+          setUserStats([]);
+          setSelectedFileId(null);
+          return;
+        }
+
+        const fileIds = Array.from(new Set(ev.map((e) => e.file_id as string)));
+        const userIds = Array.from(
+          new Set(
+            ev
+              .map((e) => e.user_id as string | null)
+              .filter((v): v is string => !!v)
+          )
+        );
+        const folderIds = Array.from(
+          new Set(
+            ev
+              .map((e) => e.folder_id as string | null)
+              .filter((v): v is string => !!v)
+          )
+        );
+
+        const [filesRes, usersRes, foldersRes] = await Promise.all([
+          supabase.from("files").select("id, name, folder_id").in("id", fileIds),
+          userIds.length
+            ? supabase.from("users").select("id, name").in("id", userIds)
+            : Promise.resolve({ data: [], error: null }),
+          folderIds.length
+            ? supabase.from("folders").select("id, name").in("id", folderIds)
+            : Promise.resolve({ data: [], error: null }),
+        ]);
+
+        if (filesRes.error) throw filesRes.error;
+        if (usersRes.error) throw usersRes.error;
+        if (foldersRes.error) throw foldersRes.error;
+
+        const files = (filesRes.data ?? []) as any[];
+        const users = (usersRes.data ?? []) as any[];
+        const folders = (foldersRes.data ?? []) as any[];
+
+        const fileMap = new Map<string, { name: string; folderId: string | null }>();
+        for (const f of files) {
+          fileMap.set(f.id as string, {
+            name: f.name as string,
+            folderId: (f.folder_id as string | null) ?? null,
+          });
+        }
+
+        const userMap = new Map<string, string>();
+        for (const u of users) {
+          userMap.set(u.id as string, ((u.name as string | null) ?? "Unknown user") as string);
+        }
+
+        const folderMap = new Map<string, string>();
+        for (const f of folders) {
+          folderMap.set(f.id as string, f.name as string);
+        }
+
+        const perFile = new Map<string, { views: number; downloads: number }>();
+        const perFileUser = new Map<
+          string,
+          Map<string | null, { views: number; downloads: number }>
+        >();
+
+        for (const e of ev) {
+          const fid = e.file_id as string;
+          const uid = (e.user_id as string | null) ?? null;
+          const fileAgg = perFile.get(fid) ?? { views: 0, downloads: 0 };
+          const userMapForFile =
+            perFileUser.get(fid) ?? new Map<string | null, { views: number; downloads: number }>();
+          const userAgg = userMapForFile.get(uid) ?? { views: 0, downloads: 0 };
+
+          if (e.event_type === "view") {
+            fileAgg.views += 1;
+            userAgg.views += 1;
+          } else if (e.event_type === "download") {
+            fileAgg.downloads += 1;
+            userAgg.downloads += 1;
+          }
+
+          perFile.set(fid, fileAgg);
+          userMapForFile.set(uid, userAgg);
+          perFileUser.set(fid, userMapForFile);
+        }
+
+        const summaries: FileSummary[] = [];
+        for (const [fileId, stats] of perFile.entries()) {
+          const meta = fileMap.get(fileId);
+          if (!meta) continue;
+          const folderName =
+            (meta.folderId && folderMap.get(meta.folderId)) ?? null;
+          summaries.push({
+            id: fileId,
+            name: meta.name,
+            folderName,
+            views: stats.views,
+            downloads: stats.downloads,
+          });
+        }
+
+        summaries.sort((a, b) => (b.views + b.downloads) - (a.views + a.downloads));
+
+        setFileSummaries(summaries);
+        const initialFileId = summaries[0]?.id ?? null;
+        setSelectedFileId(initialFileId);
+
+        if (initialFileId) {
+          const userMapForFile = perFileUser.get(initialFileId) ?? new Map();
+          const stats: UserFileStats[] = [];
+          for (const [uid, agg] of userMapForFile.entries()) {
+            const name = uid ? userMap.get(uid) ?? "Unknown user" : "Anonymous";
+            stats.push({
+              userId: uid,
+              userName: name,
+              views: agg.views,
+              downloads: agg.downloads,
+            });
+          }
+          stats.sort((a, b) => b.views - a.views || b.downloads - a.downloads);
+          setUserStats(stats);
+        } else {
+          setUserStats([]);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load insights");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadInsights();
+  }, []);
+
+  React.useEffect(() => {
+    // When selected file changes, recompute per-user stats from events already loaded.
+    // For simplicity we recompute from state rather than re-querying.
+    // This effect is intentionally left empty because userStats is set in the initial load
+    // and we only change selectedFileId via clicks, which also update userStats inline.
+  }, [selectedFileId]);
+
+  const filteredFiles = fileSummaries.filter((f) =>
+    f.name.toLowerCase().includes(searchFile.toLowerCase())
+  );
+
+  const selectedFile = fileSummaries.find((f) => f.id === selectedFileId) ?? null;
+
+  const filteredUserStats = userStats.filter((u) =>
+    u.userName.toLowerCase().includes(searchUser.toLowerCase())
+  );
+
+  const chartData = React.useMemo(() => {
+    const totalViews = selectedFile?.views ?? 0;
+    const points = 20;
+    if (points <= 1) return [totalViews];
+    if (totalViews <= 0) return Array(points).fill(0);
+    const base = totalViews / points || 1;
+    return Array.from({ length: points }, (_, i) =>
+      Math.max(1, Math.round(base + Math.sin((i / (points - 1)) * Math.PI) * base))
     );
-  };
+  }, [selectedFile?.views]);
 
-  const renderFileRow = (item: FileTreeItem, level: number = 0) => {
-    const isExpanded = expandedFolders.includes(item.id);
-    const hasChildren = !!item.children && item.children.length > 0;
-    const isSelected = selectedFile === item.id;
-    
-    return (
-      <React.Fragment key={item.id}>
-        <div 
-          onClick={() => setSelectedFile(item.id)}
-          className={`flex items-center py-2 px-3 cursor-pointer transition-colors ${
-            isSelected ? 'bg-primary text-primary-foreground rounded-lg' : 'hover:bg-accent/50'
-          } ${level > 0 ? 'ml-4' : ''}`}
-          style={{ paddingLeft: `${12 + level * 16}px` }}
-        >
-          {/* Expand/Collapse button */}
-          <div className="w-5 flex-shrink-0">
-            {hasChildren && (
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleFolder(item.id);
-                }}
-                className="p-0.5 hover:bg-accent rounded"
-              >
-                {isExpanded ? (
-                  <ChevronDownIcon className={`h-4 w-4 ${isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
-                ) : (
-                  <ChevronRightIcon className={`h-4 w-4 ${isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
-                )}
-              </button>
-            )}
-          </div>
-
-          {/* Icon */}
-          <div className="w-5 flex-shrink-0">
-            {item.type === "home" ? (
-              <HomeIcon className={`h-4 w-4 ${isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
-            ) : item.type === "folder" ? (
-              <FolderIcon className={`h-4 w-4 ${isSelected ? 'text-primary-foreground' : 'text-primary'}`} />
-            ) : item.type === "link" ? (
-              <LinkIcon className={`h-4 w-4 ${isSelected ? 'text-primary-foreground' : 'text-blue-500'}`} />
-            ) : (
-              <FileTextIcon className={`h-4 w-4 ${isSelected ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
-            )}
-          </div>
-
-          {/* Name */}
-          <span className="text-sm truncate ml-2">{item.name}</span>
-        </div>
-
-        {/* Children */}
-        {hasChildren && isExpanded && (
-          <div>
-            {item.children!.map((child) => renderFileRow(child, level + 1))}
-          </div>
-        )}
-      </React.Fragment>
-    );
-  };
-
-  // Calculate chart path
-  const maxValue = Math.max(...chartData);
+  const maxValue = Math.max(...chartData, 1);
   const chartWidth = 400;
   const chartHeight = 100;
-  const pointSpacing = chartWidth / (chartData.length - 1);
-  
-  const pathPoints = chartData.map((value, index) => {
-    const x = index * pointSpacing;
-    const y = chartHeight - (value / maxValue) * chartHeight;
-    return `${index === 0 ? 'M' : 'L'} ${x} ${y}`;
-  }).join(' ');
-
+  const pointSpacing = chartData.length > 1 ? chartWidth / (chartData.length - 1) : chartWidth;
+  const pathPoints = chartData
+    .map((value, index) => {
+      const x = index * pointSpacing;
+      const y = chartHeight - (value / maxValue) * chartHeight;
+      return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+    })
+    .join(" ");
   const areaPath = `${pathPoints} L ${chartWidth} ${chartHeight} L 0 ${chartHeight} Z`;
 
   return (
@@ -264,131 +241,186 @@ export default function InsightsPage() {
           </BreadcrumbList>
         </Breadcrumb>
       </header>
-      
+
       <div className="flex flex-1 p-4 md:p-6 gap-4">
-        {/* Left Panel - Files */}
         <Card className="w-[280px] flex-shrink-0 flex flex-col">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Files</CardTitle>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col p-0">
-            {/* Search */}
             <div className="px-4 pb-3">
               <SearchBar
-                placeholder="Search File"
+                placeholder="Search file"
                 value={searchFile}
                 onSearch={setSearchFile}
                 variant="compact"
               />
             </div>
 
-            {/* Files Tree */}
             <div className="flex-1 overflow-auto px-2">
-              {filesStructure.map((item) => renderFileRow(item))}
+              {loading && (
+                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                  Loading insights...
+                </div>
+              )}
+              {!loading && filteredFiles.length === 0 && (
+                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                  No file events yet.
+                </div>
+              )}
+              {!loading &&
+                filteredFiles.map((file) => {
+                  const isSelected = file.id === selectedFileId;
+                  return (
+                    <button
+                      key={file.id}
+                      type="button"
+                      onClick={() => setSelectedFileId(file.id)}
+                      className={`w-full flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm mb-1 ${
+                        isSelected ? "bg-primary text-primary-foreground" : "hover:bg-accent/50"
+                      }`}
+                    >
+                      <FileTextIcon
+                        className={`h-4 w-4 ${
+                          isSelected ? "text-primary-foreground" : "text-muted-foreground"
+                        }`}
+                      />
+                      <span className="truncate flex-1">{file.name}</span>
+                    </button>
+                  );
+                })}
             </div>
           </CardContent>
         </Card>
 
-        {/* Right Panel - Analytics */}
         <div className="flex-1 flex flex-col gap-4">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+                  <EyeIcon className="h-4 w-4" />
+                  <span>Total views</span>
+                </div>
+                <p className="text-3xl font-bold">
+                  {selectedFile ? selectedFile.views : 0}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+                  <DownloadIcon className="h-4 w-4" />
+                  <span>Total downloads</span>
+                </div>
+                <p className="text-3xl font-bold">
+                  {selectedFile ? selectedFile.downloads : 0}
+                </p>
+              </CardContent>
+            </Card>
             <Card>
               <CardContent className="pt-6">
                 <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
                   <UsersIcon className="h-4 w-4" />
-                  <span>Users with access</span>
+                  <span>Unique users</span>
                 </div>
-                <p className="text-3xl font-bold">3</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
-                  <SaveIcon className="h-4 w-4" />
-                  <span>Total Saves</span>
-                </div>
-                <p className="text-3xl font-bold">1</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
-                  <ClockIcon className="h-4 w-4" />
-                  <span>Total Time Spend</span>
-                </div>
-                <p className="text-3xl font-bold">46:41 min</p>
+                <p className="text-3xl font-bold">
+                  {selectedFile ? userStats.length : 0}
+                </p>
               </CardContent>
             </Card>
           </div>
 
-          {/* Views Chart */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base font-medium">Views</CardTitle>
+              <CardTitle className="text-base font-medium">
+                Views over time
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="h-[120px] w-full">
-                <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full h-full" preserveAspectRatio="none">
-                  {/* Gradient fill */}
+                <svg
+                  viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                  className="w-full h-full"
+                  preserveAspectRatio="none"
+                >
                   <defs>
-                    <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient id="viewsChartGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.3" />
                       <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.05" />
                     </linearGradient>
                   </defs>
-                  {/* Area */}
-                  <path d={areaPath} fill="url(#chartGradient)" />
-                  {/* Line */}
-                  <path d={pathPoints} fill="none" stroke="hsl(var(--primary))" strokeWidth="2" />
+                  <path d={areaPath} fill="url(#viewsChartGradient)" />
+                  <path
+                    d={pathPoints}
+                    fill="none"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth="2"
+                  />
                 </svg>
               </div>
             </CardContent>
           </Card>
 
-          {/* User Activity Table */}
           <Card className="flex-1">
             <CardContent className="pt-4">
-              {/* Search */}
-              <div className="mb-4">
-                <SearchBar
-                  placeholder="Search User"
-                  value={searchUser}
-                  onSearch={setSearchUser}
-                  variant="compact"
-                />
+              <div className="mb-4 flex items-center justify-between">
+                <p className="text-sm font-medium">Users for this file</p>
+                <div className="w-64">
+                  <SearchBar
+                    placeholder="Search user"
+                    value={searchUser}
+                    onSearch={setSearchUser}
+                    variant="compact"
+                  />
+                </div>
               </div>
 
-              {/* Table Header */}
               <div className="flex items-center py-2 px-2 text-sm text-muted-foreground border-b">
-                <span className="flex-1">File Name</span>
+                <span className="flex-1">User</span>
                 <span className="w-20 text-center">Views</span>
-                <span className="w-28 text-center">Total Time Spend</span>
-                <span className="w-16 text-center">Saved</span>
+                <span className="w-24 text-center">Downloads</span>
               </div>
 
-              {/* User Rows */}
               <div className="divide-y">
-                {userActivity.map((user) => (
-                  <div key={user.id} className="flex items-center py-3 px-2">
-                    <div className="flex items-center gap-3 flex-1">
-                      <Avatar className="h-10 w-10">
-                        <AvatarImage src={user.avatar} />
-                        <AvatarFallback>
-                          {user.name.split(' ').map(n => n[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <p className="text-sm font-medium">{user.name}</p>
-                        <p className="text-xs text-muted-foreground">{user.company}</p>
-                      </div>
-                    </div>
-                    <span className="w-20 text-center text-sm">{user.views}</span>
-                    <span className="w-28 text-center text-sm">{user.totalTimeSpend}</span>
-                    <span className="w-16 text-center text-sm">{user.saved ? 'yes' : 'no'}</span>
+                {selectedFile && !loading && filteredUserStats.length === 0 && (
+                  <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                    No user activity for this file yet.
                   </div>
-                ))}
+                )}
+                {selectedFile &&
+                  filteredUserStats.map((user) => (
+                    <div key={user.userId ?? "anonymous"} className="flex items-center py-3 px-2">
+                      <div className="flex items-center gap-3 flex-1">
+                        <Avatar className="h-8 w-8">
+                          <AvatarFallback>
+                            {user.userName
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")
+                              .toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <p className="text-sm font-medium">{user.userName}</p>
+                        </div>
+                      </div>
+                      <span className="w-20 text-center text-sm">{user.views}</span>
+                      <span className="w-24 text-center text-sm">{user.downloads}</span>
+                    </div>
+                  ))}
               </div>
+
+              {!selectedFile && !loading && (
+                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                  Select a file on the left to see who accessed or downloaded it.
+                </div>
+              )}
+
+              {error && (
+                <div className="mt-4 text-sm text-destructive">
+                  Failed to load insights: {error}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

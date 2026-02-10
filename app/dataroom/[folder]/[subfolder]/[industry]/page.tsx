@@ -188,7 +188,7 @@ export default function IndustryPage() {
   };
 
   const handleDownload = (file: DataRoomFile) => {
-    downloadFile(file.name, file.mimeType);
+    downloadFile(file);
   };
 
   const handleUpload = (files: DataRoomFile[], rawFiles?: File[]) => {

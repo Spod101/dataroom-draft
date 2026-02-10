@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import type { DataRoomFile } from "@/lib/dataroom-types";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
+import { trackFileEvent } from "@/lib/dataroom-supabase";
 
 const STORAGE_BUCKET = "data-room";
 const SIGNED_URL_EXPIRY_SEC = 3600; // 1 hour
@@ -72,6 +73,15 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
       setLoading(false);
     });
   }, [open, file?.id, file?.storagePath, file?.url]);
+
+  // Record a "view" event whenever the preview is opened for a file.
+  React.useEffect(() => {
+    if (!open || !file) return;
+    trackFileEvent("view", file.id).catch((err) => {
+      // eslint-disable-next-line no-console
+      console.error("Failed to record file view event", err);
+    });
+  }, [open, file?.id]);
 
   const hasUrl = !!previewUrl;
 

@@ -30,6 +30,9 @@ type DbFile = {
   is_deleted: boolean;
 };
 
+type AuditTargetType = "folder" | "file" | "permission";
+type FileEventType = "view" | "download";
+
 function formatModified(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
@@ -175,6 +178,78 @@ async function getCurrentUserRole(): Promise<"admin" | "user" | null> {
   return (data as { role: "admin" | "user" }).role ?? null;
 }
 
+async function insertAuditLog(params: {
+  action: string;
+  targetType: AuditTargetType;
+  targetId?: string | null;
+  folderId?: string | null;
+  fileId?: string | null;
+  details?: Record<string, unknown>;
+}): Promise<void> {
+  const userId = await getCurrentUserId();
+  const { error } = await supabase.from("audit_log").insert({
+    user_id: userId,
+    action: params.action,
+    target_type: params.targetType,
+    target_id: params.targetId ?? null,
+    folder_id: params.folderId ?? null,
+    file_id: params.fileId ?? null,
+    details: params.details ?? {},
+  });
+  if (error) {
+    // Do not block the main action on audit failures.
+    // eslint-disable-next-line no-console
+    console.error("Failed to insert audit_log entry", error);
+  }
+}
+
+async function insertFileEvent(params: {
+  eventType: FileEventType;
+  fileId: string;
+  folderId?: string | null;
+}): Promise<void> {
+  const userId = await getCurrentUserId();
+  const { error } = await supabase.from("file_events").insert({
+    user_id: userId,
+    event_type: params.eventType,
+    file_id: params.fileId,
+    folder_id: params.folderId ?? null,
+    details: {},
+  });
+  if (error) {
+    // eslint-disable-next-line no-console
+    console.error("Failed to insert file_events entry", error);
+  }
+}
+
+export async function logAuditEvent(
+  action: string,
+  targetType: AuditTargetType,
+  options: {
+    targetId?: string | null;
+    folderId?: string | null;
+    fileId?: string | null;
+    details?: Record<string, unknown>;
+  } = {}
+): Promise<void> {
+  await insertAuditLog({
+    action,
+    targetType,
+    targetId: options.targetId ?? null,
+    folderId: options.folderId ?? null,
+    fileId: options.fileId ?? null,
+    details: options.details ?? {},
+  });
+}
+
+export async function trackFileEvent(
+  eventType: FileEventType,
+  fileId: string,
+  folderId?: string | null
+): Promise<void> {
+  await insertFileEvent({ eventType, fileId, folderId: folderId ?? null });
+}
+
 async function canCurrentUserEditFolder(folderId: string): Promise<boolean> {
   const role = await getCurrentUserRole();
   if (role === "admin") return true;
@@ -262,6 +337,11 @@ export async function createFolder(
 
   if (error) throw new Error(error.message);
   const row = data as DbFolder;
+  await logAuditEvent("folder.create", "folder", {
+    targetId: row.id,
+    folderId: row.id,
+    details: { name },
+  });
   const userDisplayNames = modifiedBy ? await fetchUserDisplayNames([modifiedBy]) : new Map<string, string>();
   return dbFolderToDataRoomFolder(row, [], [], userDisplayNames);
 }
@@ -308,6 +388,16 @@ export async function uploadFileToFolder(folderId: string, file: File): Promise<
 
   if (error) throw new Error(error.message);
   const row = data as DbFile;
+  await logAuditEvent("file.upload", "file", {
+    targetId: row.id,
+    folderId,
+    fileId: row.id,
+    details: {
+      name: file.name,
+      size: file.size,
+      type: file.type || null,
+    },
+  });
   const userDisplayNames = modifiedBy ? await fetchUserDisplayNames([modifiedBy]) : new Map<string, string>();
   return dbFileToDataRoomFile(row, userDisplayNames);
 }
@@ -322,6 +412,11 @@ export async function renameFolder(folderId: string, newName: string, siblingSlu
     .update({ name: newName, slug, last_modified: new Date().toISOString(), modified_by: modifiedBy })
     .eq("id", folderId);
   if (error) throw new Error(error.message);
+  await logAuditEvent("folder.rename", "folder", {
+    targetId: folderId,
+    folderId,
+    details: { newName },
+  });
 }
 
 /** Soft-delete folder. */
@@ -330,9 +425,18 @@ export async function deleteFolder(folderId: string): Promise<void> {
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("folders")
-    .update({ is_deleted: true, deleted_at: new Date().toISOString(), last_modified: new Date().toISOString(), modified_by: modifiedBy })
+    .update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      last_modified: new Date().toISOString(),
+      modified_by: modifiedBy,
+    })
     .eq("id", folderId);
   if (error) throw new Error(error.message);
+  await logAuditEvent("folder.delete", "folder", {
+    targetId: folderId,
+    folderId,
+  });
 }
 
 /** Rename a file. */
@@ -341,9 +445,19 @@ export async function renameFile(fileId: string, newName: string): Promise<void>
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("files")
-    .update({ name: newName, filename: newName, last_modified: new Date().toISOString(), modified_by: modifiedBy })
+    .update({
+      name: newName,
+      filename: newName,
+      last_modified: new Date().toISOString(),
+      modified_by: modifiedBy,
+    })
     .eq("id", fileId);
   if (error) throw new Error(error.message);
+  await logAuditEvent("file.rename", "file", {
+    targetId: fileId,
+    fileId,
+    details: { newName },
+  });
 }
 
 /** Soft-delete file. */
@@ -352,7 +466,16 @@ export async function deleteFile(fileId: string): Promise<void> {
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("files")
-    .update({ is_deleted: true, deleted_at: new Date().toISOString(), last_modified: new Date().toISOString(), modified_by: modifiedBy })
+    .update({
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      last_modified: new Date().toISOString(),
+      modified_by: modifiedBy,
+    })
     .eq("id", fileId);
   if (error) throw new Error(error.message);
+  await logAuditEvent("file.delete", "file", {
+    targetId: fileId,
+    fileId,
+  });
 }
