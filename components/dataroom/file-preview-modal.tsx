@@ -5,6 +5,10 @@ import { XIcon, FileTextIcon, ImageIcon, VideoIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DataRoomFile } from "@/lib/dataroom-types";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+
+const STORAGE_BUCKET = "data-room";
+const SIGNED_URL_EXPIRY_SEC = 3600; // 1 hour
 
 type PreviewType = "pdf" | "image" | "video" | "ppt" | "unsupported";
 
@@ -33,20 +37,43 @@ interface FilePreviewModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
+/** Resolve preview URL: for stored files use signed URL from Storage, for links use file.url. */
+async function getPreviewUrl(file: DataRoomFile): Promise<string | null> {
+  if (file.type === "file" && file.storagePath?.trim()) {
+    const { data, error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrl(file.storagePath, SIGNED_URL_EXPIRY_SEC);
+    if (error) return null;
+    return data?.signedUrl ?? null;
+  }
+  if (file.url?.trim()) return file.url;
+  return null;
+}
+
 export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalProps) {
   const [previewError, setPreviewError] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
+  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
 
   const previewType = file ? getPreviewType(file) : "unsupported";
-  const hasUrl = file?.url && file.url.trim() !== "";
 
+  // When modal opens with a file, resolve the preview URL (from storage or link).
   React.useEffect(() => {
-    if (open && file) {
-      setPreviewError(false);
-      setLoading(true);
+    if (!open || !file) {
+      setPreviewUrl(null);
+      return;
     }
-  }, [open, file]);
+    setPreviewError(false);
+    setLoading(true);
+    setPreviewUrl(null);
+    getPreviewUrl(file).then((url) => {
+      setPreviewUrl(url);
+      setLoading(false);
+    });
+  }, [open, file?.id, file?.storagePath, file?.url]);
+
+  const hasUrl = !!previewUrl;
 
   React.useEffect(() => {
     if (!open) return;
@@ -66,12 +93,16 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
   if (!open || !file) return null;
 
   const renderPreview = () => {
-    if (!hasUrl) {
+    if (!hasUrl && !loading) {
       return (
         <div className="flex flex-col items-center justify-center h-full text-center p-8">
           <FileTextIcon className="h-16 w-16 text-muted-foreground mb-4" />
           <h3 className="text-lg font-semibold mb-2">Preview not available</h3>
-          <p className="text-muted-foreground">File URL not configured.</p>
+          <p className="text-muted-foreground">
+            {file?.type === "file" && file?.storagePath
+              ? "Could not load file from storage."
+              : "File URL not configured."}
+          </p>
         </div>
       );
     }
@@ -88,25 +119,27 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
 
     if (previewType === "image") {
       return (
-        <div className="flex items-center justify-center h-full p-4">
+        <div className="flex items-center justify-center h-full p-4 relative">
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
           )}
-          <img
-            src={file.url}
-            alt={file.name}
-            className={cn(
-              "max-w-full max-h-full object-contain",
-              loading && "opacity-0"
-            )}
-            onLoad={() => setLoading(false)}
-            onError={() => {
-              setPreviewError(true);
-              setLoading(false);
-            }}
-          />
+          {previewUrl && (
+            <img
+              src={previewUrl}
+              alt={file.name}
+              className={cn(
+                "max-w-full max-h-full object-contain",
+                loading && "opacity-0"
+              )}
+              onLoad={() => setLoading(false)}
+              onError={() => {
+                setPreviewError(true);
+                setLoading(false);
+              }}
+            />
+          )}
           {previewError && (
             <div className="flex flex-col items-center justify-center h-full text-center p-8">
               <ImageIcon className="h-16 w-16 text-muted-foreground mb-4" />
@@ -120,15 +153,26 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
 
     if (previewType === "video") {
       return (
-        <div className="flex items-center justify-center h-full p-4">
-          <video
-            src={file.url}
-            controls
-            className="max-w-full max-h-full"
-            onError={() => setPreviewError(true)}
-          >
-            Your browser does not support the video tag.
-          </video>
+        <div className="flex items-center justify-center h-full p-4 relative">
+          {loading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-10">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            </div>
+          )}
+          {previewUrl && (
+            <video
+              src={previewUrl}
+              controls
+              className="max-w-full max-h-full"
+              onLoadedData={() => setLoading(false)}
+              onError={() => {
+                setPreviewError(true);
+                setLoading(false);
+              }}
+            >
+              Your browser does not support the video tag.
+            </video>
+          )}
           {previewError && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8">
               <VideoIcon className="h-16 w-16 text-muted-foreground mb-4" />
@@ -148,13 +192,14 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>
         )}
-        <iframe
-          ref={iframeRef}
-          src={file.url}
-          className="w-full h-full border-0"
-          title={file.name}
-          onLoad={() => {
-            setLoading(false);
+        {previewUrl && (
+          <iframe
+            ref={iframeRef}
+            src={previewUrl}
+            className="w-full h-full border-0"
+            title={file.name}
+            onLoad={() => {
+              setLoading(false);
             // Check if iframe loaded successfully
             try {
               const iframe = iframeRef.current;
@@ -175,11 +220,12 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
               // Cross-origin, assume it's fine
             }
           }}
-          onError={() => {
-            setPreviewError(true);
-            setLoading(false);
-          }}
-        />
+            onError={() => {
+              setPreviewError(true);
+              setLoading(false);
+            }}
+          />
+        )}
         {previewError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8 bg-background">
             <FileTextIcon className="h-16 w-16 text-muted-foreground mb-4" />

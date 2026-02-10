@@ -49,7 +49,8 @@ export function filesToDataRoomFiles(fileList: FileList | File[]): DataRoomFile[
 }
 
 interface UploadDropZoneProps {
-  onFiles: (files: DataRoomFile[]) => void;
+  /** Called with parsed data room files and optionally the raw File[] for upload. */
+  onFiles: (files: DataRoomFile[], rawFiles?: File[]) => void;
   onReplaceWarning?: (name: string, files: DataRoomFile[], resolve: (ok: boolean) => void) => void;
   existingNames?: Set<string>;
   className?: string;
@@ -83,33 +84,32 @@ export function UploadDropZone({
     return Array.from(fileList).map(fileToDataRoomFile);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDrag(false);
-    const files = mapFiles(e.dataTransfer.files);
-    if (files.length === 0) return;
-    const toReplace = files.filter((f) => existingNames.has(f.name));
+  const runWithRaw = (dataRoomFiles: DataRoomFile[], raw: File[]) => {
+    const toReplace = dataRoomFiles.filter((f) => existingNames.has(f.name));
     if (toReplace.length > 0 && onReplaceWarning) {
-      onReplaceWarning(toReplace[0].name, files, (ok) => {
-        if (ok) onFiles(files);
+      onReplaceWarning(toReplace[0].name, dataRoomFiles, (ok) => {
+        if (ok) onFiles(dataRoomFiles, raw);
       });
     } else {
-      onFiles(files);
+      onFiles(dataRoomFiles, raw);
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = mapFiles(e.target.files);
-    e.target.value = "";
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDrag(false);
+    const raw = Array.from(e.dataTransfer.files ?? []);
+    const files = raw.map(fileToDataRoomFile);
     if (files.length === 0) return;
-    const toReplace = files.filter((f) => existingNames.has(f.name));
-    if (toReplace.length > 0 && onReplaceWarning) {
-      onReplaceWarning(toReplace[0].name, files, (ok) => {
-        if (ok) onFiles(files);
-      });
-    } else {
-      onFiles(files);
-    }
+    runWithRaw(files, raw);
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    const files = raw.map(fileToDataRoomFile);
+    if (files.length === 0) return;
+    runWithRaw(files, raw);
   };
 
   return (

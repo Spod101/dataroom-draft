@@ -12,6 +12,8 @@ export type DataRoomFile = {
   mimeType?: string;
   description?: string;
   url?: string;
+  /** Storage path for type "file" (Supabase Storage bucket key). Used to get preview URL. */
+  storagePath?: string;
 };
 
 export type DataRoomFolder = {

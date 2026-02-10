@@ -51,7 +51,7 @@ const ROOT_PATH: string[] = [];
 
 export default function DataRoomPage() {
   const router = useRouter();
-  const { getChildren, getFolder, addFolder, renameItem, deleteItem, moveItem, setSharing } = useDataRoom();
+  const { state, getChildren, getFolder, addFolder, renameItem, deleteItem, moveItem, setSharing } = useDataRoom();
   const toast = useToast();
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
   const ignoreNextRowClickRef = React.useRef(false);
@@ -75,10 +75,14 @@ export default function DataRoomPage() {
 
   const folders = getChildren(ROOT_PATH).filter((c): c is DataRoomFolder => isFolder(c));
 
-  const handleNewFolder = (name: string) => {
-    addFolder(ROOT_PATH, name);
+  const handleNewFolder = async (name: string) => {
     setNewFolderOpen(false);
-    toast.success("Folder created");
+    try {
+      await addFolder(ROOT_PATH, name);
+      toast.success("Folder created");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create folder");
+    }
   };
 
   const openRename = (item: DataRoomItem) => {
@@ -88,12 +92,17 @@ export default function DataRoomPage() {
     setRenameOpen(true);
   };
 
-  const handleRename = (newName: string) => {
+  const handleRename = async (newName: string) => {
     if (!renameItemId) return;
-    renameItem(ROOT_PATH, renameItemId, newName);
     setRenameOpen(false);
+    const id = renameItemId;
     setRenameItemId(null);
-    toast.success("Folder renamed");
+    try {
+      await renameItem(ROOT_PATH, id, newName);
+      toast.success("Folder renamed");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Rename failed");
+    }
   };
 
   const openDelete = (item: DataRoomItem) => {
@@ -103,19 +112,23 @@ export default function DataRoomPage() {
     setDeleteOpen(true);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteItemId) return;
-    deleteItem(ROOT_PATH, deleteItemId);
     setDeleteOpen(false);
+    const id = deleteItemId;
     setDeleteItemId(null);
-    toast.success("Folder deleted");
+    try {
+      await deleteItem(ROOT_PATH, id);
+      toast.success("Folder deleted");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    }
   };
 
   const sharingToAccess = (sharing: string | undefined): "view" | "edit" => {
     if (!sharing) return "view";
     const s = sharing.toLowerCase();
     if (s.includes("edit")) return "edit";
-    if (s.includes("download")) return "download";
     return "view";
   };
 
@@ -194,6 +207,14 @@ export default function DataRoomPage() {
       </div>
 
       <div className="flex flex-1 flex-col p-6 gap-4">
+        {state.error && (
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+            {state.error}
+          </div>
+        )}
+        {state.loading && folders.length === 0 ? (
+          <p className="text-muted-foreground text-sm">Loading...</p>
+        ) : null}
         <DataRoomControls
           viewMode={viewMode}
           onViewModeChange={setViewMode}

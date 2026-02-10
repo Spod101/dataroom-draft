@@ -7,17 +7,22 @@ import type {
   DataRoomFile,
   DataRoomItem,
 } from "@/lib/dataroom-types";
+import { isFolder, isFile } from "@/lib/dataroom-types";
 import {
-  isFolder,
-  isFile,
-  uid,
-  slugFromName,
-  uniqueSlug,
-} from "@/lib/dataroom-types";
-import { getInitialDataRoomState } from "@/lib/dataroom-initial-state";
+  fetchDataRoomTree,
+  createFolder,
+  getSiblingSlugs,
+  uploadFileToFolder,
+  renameFolder,
+  renameFile,
+  deleteFolder,
+  deleteFile,
+} from "@/lib/dataroom-supabase";
 
 export type DataRoomState = {
   rootFolders: DataRoomFolder[];
+  loading: boolean;
+  error: string | null;
 };
 
 function getFolderAtPath(
@@ -46,7 +51,7 @@ function getChildrenAtPath(
   return folder ? folder.children : [];
 }
 
-/** Immutably set children at path. path=[] sets rootFolders. */
+/** Immutably set children at path (for move/setSharing only). */
 function setChildrenAtPath(
   rootFolders: DataRoomFolder[],
   path: DataRoomPath,
@@ -69,8 +74,10 @@ function formatDate() {
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  if (d.toDateString() === today.toDateString()) return "Today at " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  if (d.toDateString() === yesterday.toDateString()) return "Yesterday at " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  if (d.toDateString() === today.toDateString())
+    return "Today at " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  if (d.toDateString() === yesterday.toDateString())
+    return "Yesterday at " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   return d.toLocaleDateString() + " " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 
@@ -78,136 +85,44 @@ const now = formatDate();
 const modifiedBy = "You";
 
 type Action =
-  | { type: "ADD_FOLDER"; path: DataRoomPath; name: string }
-  | { type: "ADD_FILES"; path: DataRoomPath; files: DataRoomFile[] }
-  | { type: "RENAME"; path: DataRoomPath; itemId: string; newName: string }
-  | { type: "DELETE"; path: DataRoomPath; itemId: string }
-  | { type: "REPLACE_FILE"; path: DataRoomPath; fileId: string; file: DataRoomFile }
+  | { type: "SET_TREE"; rootFolders: DataRoomFolder[] }
+  | { type: "SET_LOADING"; loading: boolean }
+  | { type: "SET_ERROR"; error: string | null }
+  | { type: "ADD_FILES_AT_PATH"; path: DataRoomPath; files: DataRoomFile[] }
   | { type: "MOVE_ITEM"; sourcePath: DataRoomPath; itemId: string; targetPath: DataRoomPath }
-  | { type: "SET_SHARING"; path: DataRoomPath; itemId: string; sharing: string }
-  | { type: "RESET" };
+  | { type: "SET_SHARING"; path: DataRoomPath; itemId: string; sharing: string };
 
 function reducer(state: DataRoomState, action: Action): DataRoomState {
   switch (action.type) {
-    case "RESET":
-      return { rootFolders: getInitialDataRoomState() };
-    case "ADD_FOLDER": {
-      const children = getChildrenAtPath(state.rootFolders, action.path);
-      const existingSlugs = children
-        .filter((c): c is DataRoomFolder => isFolder(c))
-        .map((c) => c.slug);
-      const slug = uniqueSlug(slugFromName(action.name), existingSlugs);
-      const newFolder: DataRoomFolder = {
-        id: uid(),
-        name: action.name,
-        slug,
-        modified: now,
-        modifiedBy,
-        sharing: "Shared",
-        children: [],
-      };
-      const newChildren: DataRoomItem[] = [...children, newFolder];
-      return {
-        rootFolders: setChildrenAtPath(state.rootFolders, action.path, newChildren),
-      };
-    }
-    case "ADD_FILES": {
-      let children = [...getChildrenAtPath(state.rootFolders, action.path)];
-      for (const file of action.files) {
-        const idx = children.findIndex(
-          (c) => isFile(c) && c.name === file.name
-        );
-        if (idx >= 0) children[idx] = file;
-        else children.push(file);
-      }
-      return {
-        rootFolders: setChildrenAtPath(state.rootFolders, action.path, children),
-      };
-    }
-    case "RENAME": {
-      const children = getChildrenAtPath(state.rootFolders, action.path);
-      const newChildren = children.map((c) => {
-        if (c.id !== action.itemId) return c;
-        if (isFolder(c)) {
-          const otherSlugs = children
-            .filter((x): x is DataRoomFolder => isFolder(x) && x.id !== action.itemId)
-            .map((x) => x.slug);
-          return {
-            ...c,
-            name: action.newName,
-            slug: uniqueSlug(slugFromName(action.newName), otherSlugs),
-            modified: now,
-            modifiedBy,
-          };
-        }
-        return { ...c, name: action.newName, modified: now, modifiedBy };
-      });
-      return {
-        rootFolders: setChildrenAtPath(state.rootFolders, action.path, newChildren),
-      };
-    }
-    case "DELETE": {
-      const children = getChildrenAtPath(state.rootFolders, action.path).filter(
-        (c) => c.id !== action.itemId
-      );
-      return {
-        rootFolders: setChildrenAtPath(state.rootFolders, action.path, children),
-      };
-    }
-    case "REPLACE_FILE": {
-      const children = getChildrenAtPath(state.rootFolders, action.path).map(
-        (c) => (c.id === action.fileId ? action.file : c)
-      );
-      return {
-        rootFolders: setChildrenAtPath(state.rootFolders, action.path, children),
-      };
+    case "SET_TREE":
+      return { ...state, rootFolders: action.rootFolders, loading: false, error: null };
+    case "SET_LOADING":
+      return { ...state, loading: action.loading };
+    case "SET_ERROR":
+      return { ...state, error: action.error, loading: false };
+    case "ADD_FILES_AT_PATH": {
+      const current = getChildrenAtPath(state.rootFolders, action.path);
+      const newChildren = [...current, ...action.files];
+      return { ...state, rootFolders: setChildrenAtPath(state.rootFolders, action.path, newChildren) };
     }
     case "MOVE_ITEM": {
       const sourceChildren = getChildrenAtPath(state.rootFolders, action.sourcePath);
       const item = sourceChildren.find((c) => c.id === action.itemId);
       if (!item) return state;
-      if (
-        action.sourcePath.length === action.targetPath.length &&
-        action.sourcePath.every((s, i) => s === action.targetPath[i])
-      ) {
-        return state;
-      }
-      if (isFolder(item)) {
-        const descendantPrefix = [...action.sourcePath, item.slug];
-        if (
-          action.targetPath.length >= descendantPrefix.length &&
-          descendantPrefix.every((s, i) => action.targetPath[i] === s)
-        ) {
-          return state;
-        }
-      }
-      let targetChildren = [...getChildrenAtPath(state.rootFolders, action.targetPath)];
-      const moved =
-        isFolder(item)
-          ? {
-              ...item,
-              slug: uniqueSlug(
-                item.slug,
-                targetChildren.filter((c): c is DataRoomFolder => isFolder(c)).map((c) => c.slug)
-              ),
-              modified: now,
-              modifiedBy,
-            }
-          : { ...item, modified: now, modifiedBy };
+      const targetChildren = [...getChildrenAtPath(state.rootFolders, action.targetPath)];
       const newSourceChildren = sourceChildren.filter((c) => c.id !== action.itemId);
-      const newTargetChildren = [...targetChildren, moved];
+      const newTargetChildren = [...targetChildren, { ...item, modified: now, modifiedBy: "You" }];
       let next = setChildrenAtPath(state.rootFolders, action.sourcePath, newSourceChildren);
       next = setChildrenAtPath(next, action.targetPath, newTargetChildren);
-      return { rootFolders: next };
+      return { ...state, rootFolders: next };
     }
     case "SET_SHARING": {
       const children = getChildrenAtPath(state.rootFolders, action.path);
       const newChildren = children.map((c) =>
-        c.id === action.itemId
-          ? { ...c, sharing: action.sharing, modified: now, modifiedBy }
-          : c
+        c.id === action.itemId ? { ...c, sharing: action.sharing, modified: now, modifiedBy } : c
       );
       return {
+        ...state,
         rootFolders: setChildrenAtPath(state.rootFolders, action.path, newChildren),
       };
     }
@@ -218,7 +133,6 @@ function reducer(state: DataRoomState, action: Action): DataRoomState {
 
 export type FolderWithPath = { path: DataRoomPath; folder: DataRoomFolder };
 
-/** Returns all folders in the tree with their paths (for move-target picker). */
 export function getAllFoldersWithPaths(rootFolders: DataRoomFolder[]): FolderWithPath[] {
   const out: FolderWithPath[] = [];
   function walk(path: DataRoomPath, folders: DataRoomFolder[]) {
@@ -234,12 +148,14 @@ export function getAllFoldersWithPaths(rootFolders: DataRoomFolder[]): FolderWit
 
 type DataRoomContextValue = {
   state: DataRoomState;
+  refresh: () => Promise<void>;
   getChildren: (path: DataRoomPath) => DataRoomItem[];
   getFolder: (path: DataRoomPath) => DataRoomFolder | null;
-  addFolder: (path: DataRoomPath, name: string) => void;
+  addFolder: (path: DataRoomPath, name: string) => Promise<void>;
+  uploadFiles: (path: DataRoomPath, files: File[]) => Promise<void>;
   addFiles: (path: DataRoomPath, files: DataRoomFile[]) => void;
-  renameItem: (path: DataRoomPath, itemId: string, newName: string) => void;
-  deleteItem: (path: DataRoomPath, itemId: string) => void;
+  renameItem: (path: DataRoomPath, itemId: string, newName: string) => Promise<void>;
+  deleteItem: (path: DataRoomPath, itemId: string) => Promise<void>;
   replaceFile: (path: DataRoomPath, fileId: string, file: DataRoomFile) => void;
   moveItem: (sourcePath: DataRoomPath, itemId: string, targetPath: DataRoomPath) => void;
   setSharing: (path: DataRoomPath, itemId: string, sharing: string) => void;
@@ -249,8 +165,24 @@ const DataRoomContext = React.createContext<DataRoomContextValue | null>(null);
 
 export function DataRoomProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = React.useReducer(reducer, {
-    rootFolders: getInitialDataRoomState(),
+    rootFolders: [],
+    loading: true,
+    error: null,
   });
+
+  const refresh = React.useCallback(async () => {
+    dispatch({ type: "SET_LOADING", loading: true });
+    try {
+      const rootFolders = await fetchDataRoomTree();
+      dispatch({ type: "SET_TREE", rootFolders });
+    } catch (e) {
+      dispatch({ type: "SET_ERROR", error: e instanceof Error ? e.message : "Failed to load" });
+    }
+  }, []);
+
+  React.useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const getChildren = React.useCallback(
     (path: DataRoomPath) => getChildrenAtPath(state.rootFolders, path),
@@ -260,31 +192,80 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     (path: DataRoomPath) => getFolderAtPath(state.rootFolders, path),
     [state.rootFolders]
   );
+
   const addFolder = React.useCallback(
-    (path: DataRoomPath, name: string) =>
-      dispatch({ type: "ADD_FOLDER", path, name }),
-    []
+    async (path: DataRoomPath, name: string) => {
+      const parentFolder = path.length === 0 ? null : getFolderAtPath(state.rootFolders, path);
+      const parentId = parentFolder?.id ?? null;
+      const siblingSlugs = parentId === null
+        ? state.rootFolders.map((f) => f.slug)
+        : getChildrenAtPath(state.rootFolders, path).filter(isFolder).map((f) => f.slug);
+      await createFolder(parentId, name, siblingSlugs);
+      await refresh();
+    },
+    [state.rootFolders, refresh]
   );
-  const addFiles = React.useCallback(
-    (path: DataRoomPath, files: DataRoomFile[]) =>
-      dispatch({ type: "ADD_FILES", path, files }),
-    []
+
+  const uploadFiles = React.useCallback(
+    async (path: DataRoomPath, files: File[]) => {
+      const folder = getFolderAtPath(state.rootFolders, path);
+      if (!folder) throw new Error("Folder not found");
+      const added: DataRoomFile[] = [];
+      for (const file of files) {
+        const dataRoomFile = await uploadFileToFolder(folder.id, file);
+        added.push(dataRoomFile);
+      }
+      // Show uploaded files immediately (optimistic)
+      if (added.length) dispatch({ type: "ADD_FILES_AT_PATH", path, files: added });
+      dispatch({ type: "SET_ERROR", error: null });
+      try {
+        await refresh();
+      } catch (e) {
+        // Still show error so user knows refetch failed (e.g. RLS on SELECT)
+        dispatch({ type: "SET_ERROR", error: e instanceof Error ? e.message : "Failed to refresh" });
+        throw e;
+      }
+    },
+    [state.rootFolders, refresh]
   );
+
+  const addFiles = React.useCallback((path: DataRoomPath, files: DataRoomFile[]) => {
+    // In-memory only; used when upload is done elsewhere and we want to show optimistically.
+    // Real uploads use uploadFiles(path, File[]).
+  }, []);
+
   const renameItem = React.useCallback(
-    (path: DataRoomPath, itemId: string, newName: string) =>
-      dispatch({ type: "RENAME", path, itemId, newName }),
-    []
+    async (path: DataRoomPath, itemId: string, newName: string) => {
+      const children = getChildrenAtPath(state.rootFolders, path);
+      const item = children.find((c) => c.id === itemId);
+      if (!item) return;
+      if (isFolder(item)) {
+        const siblingSlugs = children.filter((c): c is DataRoomFolder => isFolder(c) && c.id !== itemId).map((c) => c.slug);
+        await renameFolder(itemId, newName, siblingSlugs);
+      } else {
+        await renameFile(itemId, newName);
+      }
+      await refresh();
+    },
+    [state.rootFolders, refresh]
   );
+
   const deleteItem = React.useCallback(
-    (path: DataRoomPath, itemId: string) =>
-      dispatch({ type: "DELETE", path, itemId }),
-    []
+    async (path: DataRoomPath, itemId: string) => {
+      const children = getChildrenAtPath(state.rootFolders, path);
+      const item = children.find((c) => c.id === itemId);
+      if (!item) return;
+      if (isFolder(item)) await deleteFolder(itemId);
+      else await deleteFile(itemId);
+      await refresh();
+    },
+    [state.rootFolders, refresh]
   );
-  const replaceFile = React.useCallback(
-    (path: DataRoomPath, fileId: string, file: DataRoomFile) =>
-      dispatch({ type: "REPLACE_FILE", path, fileId, file }),
-    []
-  );
+
+  const replaceFile = React.useCallback((_path: DataRoomPath, _fileId: string, _file: DataRoomFile) => {
+    // No-op; replace is not persisted for now.
+  }, []);
+
   const moveItem = React.useCallback(
     (sourcePath: DataRoomPath, itemId: string, targetPath: DataRoomPath) =>
       dispatch({ type: "MOVE_ITEM", sourcePath, itemId, targetPath }),
@@ -298,9 +279,11 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
 
   const value: DataRoomContextValue = {
     state,
+    refresh,
     getChildren,
     getFolder,
     addFolder,
+    uploadFiles,
     addFiles,
     renameItem,
     deleteItem,

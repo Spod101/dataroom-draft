@@ -74,7 +74,7 @@ export default function SubfolderPage() {
   const subfolderSlug = params.subfolder as string;
   const path = React.useMemo(() => [folderSlug, subfolderSlug], [folderSlug, subfolderSlug]);
 
-  const { getChildren, getFolder, addFolder, addFiles, renameItem, deleteItem, moveItem, setSharing } =
+  const { getChildren, getFolder, addFolder, addFiles, uploadFiles, renameItem, deleteItem, moveItem, setSharing } =
     useDataRoom();
   const toast = useToast();
   const parentFolder = getFolder([folderSlug]);
@@ -104,6 +104,7 @@ export default function SubfolderPage() {
   const [moveTargetPath, setMoveTargetPath] = React.useState<DataRoomPath | null>(null);
   const [moveTargetLabel, setMoveTargetLabel] = React.useState("");
   const [uploadDialogOpen, setUploadDialogOpen] = React.useState(false);
+  const [uploading, setUploading] = React.useState(false);
   const [previewFile, setPreviewFile] = React.useState<DataRoomFile | null>(null);
   const [previewOpen, setPreviewOpen] = React.useState(false);
 
@@ -112,12 +113,17 @@ export default function SubfolderPage() {
     [children]
   );
 
-  const handleRename = (newName: string) => {
+  const handleRename = async (newName: string) => {
     if (!renameItemId) return;
-    renameItem(path, renameItemId, newName);
     setRenameOpen(false);
+    const id = renameItemId;
     setRenameItemId(null);
-    toast.success("Item renamed");
+    try {
+      await renameItem(path, id, newName);
+      toast.success("Item renamed");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Rename failed");
+    }
   };
 
   const openRename = (item: DataRoomItem) => {
@@ -127,12 +133,17 @@ export default function SubfolderPage() {
     setRenameOpen(true);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteItemId) return;
-    deleteItem(path, deleteItemId);
     setDeleteOpen(false);
+    const id = deleteItemId;
     setDeleteItemId(null);
-    toast.success("Item deleted");
+    try {
+      await deleteItem(path, id);
+      toast.success("Item deleted");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    }
   };
 
   const openDelete = (item: DataRoomItem) => {
@@ -177,8 +188,20 @@ export default function SubfolderPage() {
     downloadFile(file.name, file.mimeType);
   };
 
-  const handleUpload = (files: DataRoomFile[]) => {
-    addFiles(path, files);
+  const handleUpload = (files: DataRoomFile[], rawFiles?: File[]) => {
+    if (rawFiles?.length) {
+      setUploading(true);
+      uploadFiles(path, rawFiles)
+        .then(() => {
+          toast.success("Files uploaded");
+          setUploadDialogOpen(false);
+        })
+        .catch((e) => toast.error(e instanceof Error ? e.message : "Upload failed"))
+        .finally(() => setUploading(false));
+    } else {
+      addFiles(path, files);
+      setUploadDialogOpen(false);
+    }
   };
 
   const handleOverwriteWarning = (
@@ -213,10 +236,14 @@ export default function SubfolderPage() {
     toast.success(`Downloading "${name}" as ZIP`);
   };
 
-  const handleNewFolder = (name: string) => {
-    addFolder(path, name);
+  const handleNewFolder = async (name: string) => {
     setNewFolderOpen(false);
-    toast.success("Folder created");
+    try {
+      await addFolder(path, name);
+      toast.success("Folder created");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create folder");
+    }
   };
 
   const openMove = (item: DataRoomItem) => {

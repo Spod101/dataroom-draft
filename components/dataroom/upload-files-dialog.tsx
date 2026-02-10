@@ -16,7 +16,8 @@ import { FolderUp } from "lucide-react";
 interface UploadFilesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onFiles: (files: DataRoomFile[]) => void;
+  /** Receives data room files and, when from drop/picker, the raw File[] for upload. Caller may close dialog after upload. */
+  onFiles: (files: DataRoomFile[], rawFiles?: File[]) => void;
   onReplaceWarning?: (name: string, files: DataRoomFile[], resolve: (ok: boolean) => void) => void;
   existingNames?: Set<string>;
 }
@@ -28,9 +29,9 @@ export function UploadFilesDialog({
   onReplaceWarning,
   existingNames = new Set(),
 }: UploadFilesDialogProps) {
-  const handleFiles = (files: DataRoomFile[]) => {
-    onFiles(files);
-    onOpenChange(false);
+  const handleFiles = (files: DataRoomFile[], rawFiles?: File[]) => {
+    onFiles(files, rawFiles);
+    if (!rawFiles?.length) onOpenChange(false);
   };
 
   const handleReplaceWarning = (
@@ -48,15 +49,16 @@ export function UploadFilesDialog({
     const fileList = e.target.files;
     e.target.value = "";
     if (!fileList?.length) return;
+    const raw = Array.from(fileList);
     const files = filesToDataRoomFiles(fileList);
     const toReplace = files.filter((f) => existingNames.has(f.name));
     if (toReplace.length > 0 && onReplaceWarning) {
       onOpenChange(false);
       onReplaceWarning(toReplace[0].name, files, (ok) => {
-        if (ok) onFiles(files);
+        if (ok) onFiles(files, raw);
       });
     } else {
-      onFiles(files);
+      onFiles(files, raw);
       onOpenChange(false);
     }
   };

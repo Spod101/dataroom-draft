@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/sidebar";
 import { InputDialog } from "@/components/dataroom/input-dialog";
 import { ConfirmDialog } from "@/components/dataroom/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
 function pathKey(path: DataRoomPath): string {
@@ -42,6 +43,7 @@ type ContextMenuState = {
 
 export function DataRoomNav() {
   const pathname = usePathname();
+  const toast = useToast();
   const { state, getChildren, addFolder, renameItem, deleteItem } =
     useDataRoom();
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
@@ -178,8 +180,14 @@ export function DataRoomNav() {
         placeholder="Folder name"
         submitLabel="Rename"
         defaultValue={renameName}
-        onSubmit={(value) => {
-          renameItem(renamePath, renameId, value);
+        onSubmit={async (value) => {
+          setRenameOpen(false);
+          try {
+            await renameItem(renamePath, renameId, value);
+            toast.success("Folder renamed");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Rename failed");
+          }
         }}
       />
       <InputDialog
@@ -190,8 +198,14 @@ export function DataRoomNav() {
         placeholder="Subfolder name"
         submitLabel="Add"
         defaultValue=""
-        onSubmit={(value) => {
-          addFolder(addSubfolderPath, value);
+        onSubmit={async (value) => {
+          setAddSubfolderOpen(false);
+          try {
+            await addFolder(addSubfolderPath, value);
+            toast.success("Subfolder created");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed to create subfolder");
+          }
         }}
       />
       <ConfirmDialog
@@ -201,7 +215,15 @@ export function DataRoomNav() {
         description={`Delete "${deleteName}" and all its contents? This cannot be undone.`}
         confirmLabel="Delete"
         variant="destructive"
-        onConfirm={() => deleteItem(deletePath, deleteId)}
+        onConfirm={async () => {
+          setDeleteOpen(false);
+          try {
+            await deleteItem(deletePath, deleteId);
+            toast.success("Folder deleted");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Delete failed");
+          }
+        }}
       />
     </>
   );
@@ -307,6 +329,7 @@ function NavFolder({
 
 export function AddNavigationButton() {
   const { addFolder } = useDataRoom();
+  const toast = useToast();
   const [open, setOpen] = React.useState(false);
 
   return (
@@ -315,10 +338,10 @@ export function AddNavigationButton() {
         type="button"
         onClick={() => setOpen(true)}
         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:p-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:[&_span]:hidden"
-        title="Add Navigation"
+        title="New root folder"
       >
         <PlusIcon className="size-4 shrink-0" />
-        <span>Add Navigation</span>
+        <span>New folder</span>
       </button>
       <InputDialog
         open={open}
@@ -329,9 +352,14 @@ export function AddNavigationButton() {
         placeholder="Folder name"
         submitLabel="Add"
         defaultValue=""
-        onSubmit={(value) => {
-          addFolder([], value);
+        onSubmit={async (value) => {
           setOpen(false);
+          try {
+            await addFolder([], value);
+            toast.success("Folder created");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Failed to create folder");
+          }
         }}
       />
     </>
