@@ -30,7 +30,6 @@ import {
   isFolder,
   isFile,
   type DataRoomPath,
-  type DataRoomFolder,
   type DataRoomFile,
   type DataRoomItem,
 } from "@/lib/dataroom-types";
@@ -102,7 +101,6 @@ export default function FolderPage() {
   const [moveTargetPath, setMoveTargetPath] = React.useState<DataRoomPath | null>(null);
   const [moveTargetLabel, setMoveTargetLabel] = React.useState("");
   const [uploadDialogOpen, setUploadDialogOpen] = React.useState(false);
-  const [uploading, setUploading] = React.useState(false);
   const [previewFile, setPreviewFile] = React.useState<DataRoomFile | null>(null);
   const [previewOpen, setPreviewOpen] = React.useState(false);
 
@@ -183,14 +181,12 @@ export default function FolderPage() {
 
   const handleUpload = (files: DataRoomFile[], rawFiles?: File[]) => {
     if (rawFiles?.length) {
-      setUploading(true);
       uploadFiles(path, rawFiles)
         .then(() => {
           toast.success("Files uploaded");
           setUploadDialogOpen(false);
         })
-        .catch((e) => toast.error(e instanceof Error ? e.message : "Upload failed"))
-        .finally(() => setUploading(false));
+        .catch((e) => toast.error(e instanceof Error ? e.message : "Upload failed"));
     } else {
       addFiles(path, files);
       setUploadDialogOpen(false);

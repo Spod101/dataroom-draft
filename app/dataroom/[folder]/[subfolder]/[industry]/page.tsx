@@ -30,7 +30,6 @@ import {
   isFolder,
   isFile,
   type DataRoomPath,
-  type DataRoomFolder,
   type DataRoomFile,
   type DataRoomItem,
 } from "@/lib/dataroom-types";
@@ -109,7 +108,6 @@ export default function IndustryPage() {
   const [moveTargetPath, setMoveTargetPath] = React.useState<DataRoomPath | null>(null);
   const [moveTargetLabel, setMoveTargetLabel] = React.useState("");
   const [uploadDialogOpen, setUploadDialogOpen] = React.useState(false);
-  const [uploading, setUploading] = React.useState(false);
   const [previewFile, setPreviewFile] = React.useState<DataRoomFile | null>(null);
   const [previewOpen, setPreviewOpen] = React.useState(false);
 
@@ -158,11 +156,10 @@ export default function IndustryPage() {
     setDeleteOpen(true);
   };
 
-  const sharingToAccess = (sharing: string | undefined): "view" | "download" | "edit" => {
+  const sharingToAccess = (sharing: string | undefined): "view" | "edit" => {
     if (!sharing) return "view";
     const s = sharing.toLowerCase();
     if (s.includes("edit")) return "edit";
-    if (s.includes("download")) return "download";
     return "view";
   };
 
@@ -175,8 +172,6 @@ export default function IndustryPage() {
       setShareLink(`${base}/dataroom/${folderSlug}/${subfolderSlug}/${industrySlug}?file=${item.id}`);
     setShareItem(item);
     // Use current sharing label to derive access; default to "view".
-    // sharing is common on both folders and files
-    // @ts-ignore
     setShareAccess(sharingToAccess(item.sharing));
     setShareOpen(true);
   };
@@ -197,14 +192,12 @@ export default function IndustryPage() {
 
   const handleUpload = (files: DataRoomFile[], rawFiles?: File[]) => {
     if (rawFiles?.length) {
-      setUploading(true);
       uploadFiles(path, rawFiles)
         .then(() => {
           toast.success("Files uploaded");
           setUploadDialogOpen(false);
         })
-        .catch((e) => toast.error(e instanceof Error ? e.message : "Upload failed"))
-        .finally(() => setUploading(false));
+        .catch((e) => toast.error(e instanceof Error ? e.message : "Upload failed"));
     } else {
       addFiles(path, files);
       setUploadDialogOpen(false);

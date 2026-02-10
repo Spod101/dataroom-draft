@@ -11,7 +11,6 @@ import { isFolder, isFile } from "@/lib/dataroom-types";
 import {
   fetchDataRoomTree,
   createFolder,
-  getSiblingSlugs,
   uploadFileToFolder,
   renameFolder,
   renameFile,
@@ -24,6 +23,15 @@ export type DataRoomState = {
   rootFolders: DataRoomFolder[];
   loading: boolean;
   error: string | null;
+  upload: UploadProgress | null;
+};
+
+export type UploadProgress = {
+  totalFiles: number;
+  completedFiles: number;
+  totalBytes: number;
+  uploadedBytes: number;
+  currentFileName: string | null;
 };
 
 function getFolderAtPath(
@@ -90,7 +98,10 @@ type Action =
   | { type: "SET_ERROR"; error: string | null }
   | { type: "ADD_FILES_AT_PATH"; path: DataRoomPath; files: DataRoomFile[] }
   | { type: "MOVE_ITEM"; sourcePath: DataRoomPath; itemId: string; targetPath: DataRoomPath; modifiedBy: string }
-  | { type: "SET_SHARING"; path: DataRoomPath; itemId: string; sharing: string; modifiedBy: string };
+  | { type: "SET_SHARING"; path: DataRoomPath; itemId: string; sharing: string; modifiedBy: string }
+  | { type: "UPLOAD_START"; totalFiles: number; totalBytes: number }
+  | { type: "UPLOAD_UPDATE"; completedFiles: number; uploadedBytes: number; currentFileName: string | null }
+  | { type: "UPLOAD_END" };
 
 function reducer(state: DataRoomState, action: Action): DataRoomState {
   switch (action.type) {
@@ -126,6 +137,31 @@ function reducer(state: DataRoomState, action: Action): DataRoomState {
         rootFolders: setChildrenAtPath(state.rootFolders, action.path, newChildren),
       };
     }
+    case "UPLOAD_START":
+      return {
+        ...state,
+        upload: {
+          totalFiles: action.totalFiles,
+          completedFiles: 0,
+          totalBytes: action.totalBytes,
+          uploadedBytes: 0,
+          currentFileName: null,
+        },
+      };
+    case "UPLOAD_UPDATE":
+      return state.upload
+        ? {
+            ...state,
+            upload: {
+              ...state.upload,
+              completedFiles: action.completedFiles,
+              uploadedBytes: action.uploadedBytes,
+              currentFileName: action.currentFileName,
+            },
+          }
+        : state;
+    case "UPLOAD_END":
+      return { ...state, upload: null };
     default:
       return state;
   }
@@ -171,6 +207,7 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     rootFolders: [],
     loading: true,
     error: null,
+    upload: null,
   });
 
   const refresh = React.useCallback(async () => {
@@ -213,26 +250,79 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     async (path: DataRoomPath, files: File[]) => {
       const folder = getFolderAtPath(state.rootFolders, path);
       if (!folder) throw new Error("Folder not found");
+      const totalBytes = files.reduce((sum, f) => sum + (typeof f.size === "number" ? f.size : 0), 0);
+      dispatch({ type: "UPLOAD_START", totalFiles: files.length, totalBytes });
       const added: DataRoomFile[] = [];
-      for (const file of files) {
-        const dataRoomFile = await uploadFileToFolder(folder.id, file);
-        added.push(dataRoomFile);
-      }
-      // Show uploaded files immediately (optimistic)
-      if (added.length) dispatch({ type: "ADD_FILES_AT_PATH", path, files: added });
-      dispatch({ type: "SET_ERROR", error: null });
+      let completedFiles = 0;
+      let uploadedBytes = 0;
       try {
-        await refresh();
-      } catch (e) {
-        // Still show error so user knows refetch failed (e.g. RLS on SELECT)
-        dispatch({ type: "SET_ERROR", error: e instanceof Error ? e.message : "Failed to refresh" });
-        throw e;
+        for (const file of files) {
+          const fileSize = typeof file.size === "number" ? file.size : 0;
+          const baseBytesForFile = uploadedBytes;
+          let estimatedBytesForFile = 0;
+          let interval: ReturnType<typeof setInterval> | undefined;
+
+          // Start a lightweight timer to show smooth in-flight progress for the current file.
+          if (fileSize > 0) {
+            const maxEstimatedForFile = fileSize * 0.9; // cap at 90% until the upload actually finishes
+            const tickBytes = maxEstimatedForFile / 20; // ~20 ticks to reach 90%
+            interval = setInterval(() => {
+              estimatedBytesForFile = Math.min(
+                maxEstimatedForFile,
+                estimatedBytesForFile + tickBytes
+              );
+              dispatch({
+                type: "UPLOAD_UPDATE",
+                completedFiles,
+                uploadedBytes: baseBytesForFile + estimatedBytesForFile,
+                currentFileName: file.name,
+              });
+            }, 300);
+          } else {
+            // Still show that we're working on this file name.
+            dispatch({
+              type: "UPLOAD_UPDATE",
+              completedFiles,
+              uploadedBytes,
+              currentFileName: file.name,
+            });
+          }
+
+          try {
+            const dataRoomFile = await uploadFileToFolder(folder.id, file);
+            added.push(dataRoomFile);
+          } finally {
+            if (interval) clearInterval(interval);
+          }
+
+          completedFiles += 1;
+          uploadedBytes += fileSize;
+          dispatch({
+            type: "UPLOAD_UPDATE",
+            completedFiles,
+            uploadedBytes,
+            currentFileName: file.name,
+          });
+        }
+
+        // Show uploaded files immediately (optimistic)
+        if (added.length) dispatch({ type: "ADD_FILES_AT_PATH", path, files: added });
+        dispatch({ type: "SET_ERROR", error: null });
+        try {
+          await refresh();
+        } catch (e) {
+          // Still show error so user knows refetch failed (e.g. RLS on SELECT)
+          dispatch({ type: "SET_ERROR", error: e instanceof Error ? e.message : "Failed to refresh" });
+          throw e;
+        }
+      } finally {
+        dispatch({ type: "UPLOAD_END" });
       }
     },
     [state.rootFolders, refresh]
   );
 
-  const addFiles = React.useCallback((path: DataRoomPath, files: DataRoomFile[]) => {
+  const addFiles = React.useCallback((_path: DataRoomPath, _files: DataRoomFile[]) => {
     // In-memory only; used when upload is done elsewhere and we want to show optimistically.
     // Real uploads use uploadFiles(path, File[]).
   }, []);

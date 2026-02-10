@@ -12,6 +12,15 @@ import { Button } from "@/components/ui/button";
 import { UploadDropZone, filesToDataRoomFiles } from "@/components/dataroom/upload-drop-zone";
 import type { DataRoomFile } from "@/lib/dataroom-types";
 import { FolderUp } from "lucide-react";
+import { useDataRoom } from "@/contexts/dataroom-context";
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
 
 interface UploadFilesDialogProps {
   open: boolean;
@@ -29,6 +38,10 @@ export function UploadFilesDialog({
   onReplaceWarning,
   existingNames = new Set(),
 }: UploadFilesDialogProps) {
+  const { state } = useDataRoom();
+  const upload = state.upload;
+  const uploading = !!upload;
+
   const handleFiles = (files: DataRoomFile[], rawFiles?: File[]) => {
     onFiles(files, rawFiles);
     if (!rawFiles?.length) onOpenChange(false);
@@ -46,6 +59,7 @@ export function UploadFilesDialog({
   const folderInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (uploading) return;
     const fileList = e.target.files;
     e.target.value = "";
     if (!fileList?.length) return;
@@ -72,10 +86,50 @@ export function UploadFilesDialog({
             Choose files to upload into this folder. You can drag and drop or click to browse.
           </DialogDescription>
         </DialogHeader>
+
+        {upload && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-primary">
+                  Uploading {upload.completedFiles}/{upload.totalFiles}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {upload.currentFileName ? upload.currentFileName : "Starting..."} ·{" "}
+                  {formatBytes(upload.uploadedBytes)} / {formatBytes(upload.totalBytes)}
+                </p>
+              </div>
+              <div className="shrink-0 text-sm font-medium text-primary tabular-nums">
+                {upload.totalBytes > 0
+                  ? Math.min(100, Math.round((upload.uploadedBytes / upload.totalBytes) * 100))
+                  : upload.totalFiles > 0
+                    ? Math.min(100, Math.round((upload.completedFiles / upload.totalFiles) * 100))
+                    : 0}
+                %
+              </div>
+            </div>
+            <div className="mt-2 h-2 w-full rounded-full bg-primary/15 overflow-hidden">
+              <div
+                className="h-full bg-primary transition-[width] duration-200"
+                style={{
+                  width: `${
+                    upload.totalBytes > 0
+                      ? Math.min(100, Math.round((upload.uploadedBytes / upload.totalBytes) * 100))
+                      : upload.totalFiles > 0
+                        ? Math.min(100, Math.round((upload.completedFiles / upload.totalFiles) * 100))
+                        : 0
+                  }%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         <UploadDropZone
           onFiles={handleFiles}
           onReplaceWarning={onReplaceWarning ? handleReplaceWarning : undefined}
           existingNames={existingNames}
+          disabled={uploading}
           className="rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 overflow-hidden min-h-[200px] cursor-pointer"
         >
           <div className="flex flex-col items-center justify-center gap-3 p-8 h-full min-h-[200px] text-center">
@@ -112,13 +166,15 @@ export function UploadFilesDialog({
             {...({ webkitdirectory: "", directory: "" } as React.InputHTMLAttributes<HTMLInputElement>)}
             multiple
             onChange={handleFolderChange}
+            disabled={uploading}
           />
           <Button
             type="button"
             variant="outline"
             size="sm"
             className="border-primary/20 text-primary hover:bg-primary/10 hover:text-primary"
-            onClick={() => folderInputRef.current?.click()}
+            onClick={() => !uploading && folderInputRef.current?.click()}
+            disabled={uploading}
           >
             <FolderUp className="h-4 w-4 mr-2" />
             Select folder

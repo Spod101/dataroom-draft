@@ -57,6 +57,7 @@ interface UploadDropZoneProps {
   children?: React.ReactNode;
   /** Optional ref to trigger file picker programmatically (e.g. from a "File upload" dropdown item). */
   openFilePickerRef?: React.MutableRefObject<(() => void) | null>;
+  disabled?: boolean;
 }
 
 export function UploadDropZone({
@@ -66,6 +67,7 @@ export function UploadDropZone({
   className,
   children,
   openFilePickerRef,
+  disabled = false,
 }: UploadDropZoneProps) {
   const [drag, setDrag] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -79,11 +81,6 @@ export function UploadDropZone({
     }
   }, [openFilePickerRef]);
 
-  const mapFiles = (fileList: FileList | null): DataRoomFile[] => {
-    if (!fileList?.length) return [];
-    return Array.from(fileList).map(fileToDataRoomFile);
-  };
-
   const runWithRaw = (dataRoomFiles: DataRoomFile[], raw: File[]) => {
     const toReplace = dataRoomFiles.filter((f) => existingNames.has(f.name));
     if (toReplace.length > 0 && onReplaceWarning) {
@@ -96,6 +93,7 @@ export function UploadDropZone({
   };
 
   const handleDrop = (e: React.DragEvent) => {
+    if (disabled) return;
     e.preventDefault();
     setDrag(false);
     const raw = Array.from(e.dataTransfer.files ?? []);
@@ -105,6 +103,7 @@ export function UploadDropZone({
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return;
     const raw = Array.from(e.target.files ?? []);
     e.target.value = "";
     const files = raw.map(fileToDataRoomFile);
@@ -116,12 +115,17 @@ export function UploadDropZone({
     <div
       role="button"
       tabIndex={0}
-      className={className}
-      onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
-      onDragLeave={() => setDrag(false)}
+      aria-disabled={disabled}
+      className={`${className ?? ""} ${disabled ? "opacity-60 cursor-not-allowed pointer-events-none" : ""}`}
+      onDragOver={(e) => {
+        if (disabled) return;
+        e.preventDefault();
+        setDrag(true);
+      }}
+      onDragLeave={() => !disabled && setDrag(false)}
       onDrop={handleDrop}
-      onClick={() => inputRef.current?.click()}
-      onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
+      onClick={() => !disabled && inputRef.current?.click()}
+      onKeyDown={(e) => e.key === "Enter" && !disabled && inputRef.current?.click()}
     >
       <input
         ref={inputRef}
@@ -130,6 +134,7 @@ export function UploadDropZone({
         accept={ACCEPT}
         className="hidden"
         onChange={handleChange}
+        disabled={disabled}
       />
       {children ?? (
         <div

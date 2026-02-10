@@ -285,9 +285,16 @@ export default function PermissionsPage() {
     );
   };
 
-  const renderFileRow = (item: any, level: number = 0) => {
+  type FileTreeItem = {
+    id: string;
+    name: string;
+    type: "home" | "folder" | "file";
+    children?: FileTreeItem[];
+  };
+
+  const renderFileRow = (item: FileTreeItem, level: number = 0) => {
     const isExpanded = expandedFolders.includes(item.id);
-    const hasChildren = item.children && item.children.length > 0;
+    const hasChildren = !!item.children && item.children.length > 0;
     const itemPermissions = currentPermissions[item.id] || { view: false, save: false, upload: false };
     
     return (
@@ -351,7 +358,7 @@ export default function PermissionsPage() {
         {/* Children */}
         {hasChildren && isExpanded && (
           <div>
-            {item.children.map((child: any) => renderFileRow(child, level + 1))}
+            {item.children!.map((child) => renderFileRow(child, level + 1))}
           </div>
         )}
       </React.Fragment>

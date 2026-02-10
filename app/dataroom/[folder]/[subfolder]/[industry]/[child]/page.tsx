@@ -110,7 +110,6 @@ export default function IndustryChildPage() {
   const [moveTargetPath, setMoveTargetPath] = React.useState<DataRoomPath | null>(null);
   const [moveTargetLabel, setMoveTargetLabel] = React.useState("");
   const [uploadDialogOpen, setUploadDialogOpen] = React.useState(false);
-  const [uploading, setUploading] = React.useState(false);
   const [previewFile, setPreviewFile] = React.useState<DataRoomFile | null>(null);
   const [previewOpen, setPreviewOpen] = React.useState(false);
 
@@ -159,11 +158,10 @@ export default function IndustryChildPage() {
     setDeleteOpen(true);
   };
 
-  const sharingToAccess = (sharing: string | undefined): "view" | "download" | "edit" => {
+  const sharingToAccess = (sharing: string | undefined): "view" | "edit" => {
     if (!sharing) return "view";
     const s = sharing.toLowerCase();
     if (s.includes("edit")) return "edit";
-    if (s.includes("download")) return "download";
     return "view";
   };
 
@@ -175,8 +173,6 @@ export default function IndustryChildPage() {
     else
       setShareLink(`${base}/dataroom/${folderSlug}/${subfolderSlug}/${industrySlug}/${childSlug}?file=${item.id}`);
     setShareItem(item);
-    // sharing is common on both folders and files
-    // @ts-ignore
     setShareAccess(sharingToAccess(item.sharing));
     setShareOpen(true);
   };
@@ -197,14 +193,12 @@ export default function IndustryChildPage() {
 
   const handleUpload = (files: DataRoomFile[], rawFiles?: File[]) => {
     if (rawFiles?.length) {
-      setUploading(true);
       uploadFiles(path, rawFiles)
         .then(() => {
           toast.success("Files uploaded");
           setUploadDialogOpen(false);
         })
-        .catch((e) => toast.error(e instanceof Error ? e.message : "Upload failed"))
-        .finally(() => setUploading(false));
+        .catch((e) => toast.error(e instanceof Error ? e.message : "Upload failed"));
     } else {
       addFiles(path, files);
       setUploadDialogOpen(false);

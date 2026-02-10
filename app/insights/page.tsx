@@ -156,6 +156,13 @@ const chartData = [
   10, 15, 12, 18, 22, 20, 25, 28, 24, 30, 26, 32, 28, 35, 30, 38, 34, 40, 36, 42
 ];
 
+type FileTreeItem = {
+  id: string;
+  name: string;
+  type: "home" | "folder" | "file" | "link";
+  children?: FileTreeItem[];
+};
+
 export default function InsightsPage() {
   const [searchFile, setSearchFile] = React.useState("");
   const [searchUser, setSearchUser] = React.useState("");
@@ -170,9 +177,9 @@ export default function InsightsPage() {
     );
   };
 
-  const renderFileRow = (item: any, level: number = 0) => {
+  const renderFileRow = (item: FileTreeItem, level: number = 0) => {
     const isExpanded = expandedFolders.includes(item.id);
-    const hasChildren = item.children && item.children.length > 0;
+    const hasChildren = !!item.children && item.children.length > 0;
     const isSelected = selectedFile === item.id;
     
     return (
@@ -223,7 +230,7 @@ export default function InsightsPage() {
         {/* Children */}
         {hasChildren && isExpanded && (
           <div>
-            {item.children.map((child: any) => renderFileRow(child, level + 1))}
+            {item.children!.map((child) => renderFileRow(child, level + 1))}
           </div>
         )}
       </React.Fragment>
