@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import {
   FolderIcon,
   SettingsIcon,
@@ -16,6 +16,7 @@ import {
   MoonIcon,
   LogOutIcon,
 } from "lucide-react"
+import { useAuth } from "@/contexts/auth-context"
 
 import {
   Sidebar,
@@ -42,14 +43,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useTheme } from "@/components/theme-provider"
 
-// This is sample data
-const data = {
-  user: {
-    name: "John Doe",
-    email: "john@example.com",
-    avatar: "/avatar.jpg",
-  },
-  navMain: [
+const navMain = [
     {
       title: "Data Room",
       url: "/dataroom",
@@ -71,12 +65,22 @@ const data = {
       url: "/audit",
       icon: ClipboardListIcon,
     },
-  ],
-}
+  ]
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
+  const router = useRouter()
   const { theme, setTheme } = useTheme()
+  const { user, profile, signOut } = useAuth()
+
+  const displayName = profile?.name ?? user?.email?.split("@")[0] ?? "User"
+  const displayEmail = user?.email ?? ""
+
+  const handleSignOut = async () => {
+    await signOut()
+    router.push("/login")
+    router.refresh()
+  }
 
   const isActive = (url: string) => {
     if (url === "/dataroom") {
@@ -131,7 +135,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarGroupLabel>Others</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {data.navMain.filter((item) => item.title !== "Data Room").map((item) => (
+              {navMain.filter((item) => item.title !== "Data Room").map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
@@ -160,19 +164,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
                 >
                   <Avatar className="h-8 w-8 rounded-lg">
-                    <AvatarImage src={data.user.avatar} alt={data.user.name} />
                     <AvatarFallback className="rounded-lg">
-                      {data.user.name
+                      {displayName
                         .split(" ")
                         .map((n) => n[0])
-                        .join("")}
+                        .filter(Boolean)
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase() || "U"}
                     </AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold">
-                      {data.user.name}
-                    </span>
-                    <span className="truncate text-xs">{data.user.email}</span>
+                    <span className="truncate font-semibold">{displayName}</span>
+                    <span className="truncate text-xs">{displayEmail}</span>
                   </div>
                   <ChevronDownIcon className="ml-auto size-4" />
                 </SidebarMenuButton>
@@ -186,22 +190,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <DropdownMenuLabel className="p-0 font-normal">
                   <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                     <Avatar className="h-8 w-8 rounded-lg">
-                      <AvatarImage
-                        src={data.user.avatar}
-                        alt={data.user.name}
-                      />
                       <AvatarFallback className="rounded-lg">
-                        {data.user.name
+                        {displayName
                           .split(" ")
                           .map((n) => n[0])
-                          .join("")}
+                          .filter(Boolean)
+                          .join("")
+                          .slice(0, 2)
+                          .toUpperCase() || "U"}
                       </AvatarFallback>
                     </Avatar>
                     <div className="grid flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-semibold">
-                        {data.user.name}
-                      </span>
-                      <span className="truncate text-xs">{data.user.email}</span>
+                      <span className="truncate font-semibold">{displayName}</span>
+                      <span className="truncate text-xs">{displayEmail}</span>
                     </div>
                   </div>
                 </DropdownMenuLabel>
@@ -228,7 +229,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSignOut}>
                   <LogOutIcon className="mr-2 h-4 w-4" />
                   Log out
                 </DropdownMenuItem>

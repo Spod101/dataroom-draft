@@ -18,6 +18,7 @@ import {
   deleteFolder,
   deleteFile,
 } from "@/lib/dataroom-supabase";
+import { useAuth } from "@/contexts/auth-context";
 
 export type DataRoomState = {
   rootFolders: DataRoomFolder[];
@@ -82,15 +83,14 @@ function formatDate() {
 }
 
 const now = formatDate();
-const modifiedBy = "You";
 
 type Action =
   | { type: "SET_TREE"; rootFolders: DataRoomFolder[] }
   | { type: "SET_LOADING"; loading: boolean }
   | { type: "SET_ERROR"; error: string | null }
   | { type: "ADD_FILES_AT_PATH"; path: DataRoomPath; files: DataRoomFile[] }
-  | { type: "MOVE_ITEM"; sourcePath: DataRoomPath; itemId: string; targetPath: DataRoomPath }
-  | { type: "SET_SHARING"; path: DataRoomPath; itemId: string; sharing: string };
+  | { type: "MOVE_ITEM"; sourcePath: DataRoomPath; itemId: string; targetPath: DataRoomPath; modifiedBy: string }
+  | { type: "SET_SHARING"; path: DataRoomPath; itemId: string; sharing: string; modifiedBy: string };
 
 function reducer(state: DataRoomState, action: Action): DataRoomState {
   switch (action.type) {
@@ -111,7 +111,7 @@ function reducer(state: DataRoomState, action: Action): DataRoomState {
       if (!item) return state;
       const targetChildren = [...getChildrenAtPath(state.rootFolders, action.targetPath)];
       const newSourceChildren = sourceChildren.filter((c) => c.id !== action.itemId);
-      const newTargetChildren = [...targetChildren, { ...item, modified: now, modifiedBy: "You" }];
+      const newTargetChildren = [...targetChildren, { ...item, modified: now, modifiedBy: action.modifiedBy }];
       let next = setChildrenAtPath(state.rootFolders, action.sourcePath, newSourceChildren);
       next = setChildrenAtPath(next, action.targetPath, newTargetChildren);
       return { ...state, rootFolders: next };
@@ -119,7 +119,7 @@ function reducer(state: DataRoomState, action: Action): DataRoomState {
     case "SET_SHARING": {
       const children = getChildrenAtPath(state.rootFolders, action.path);
       const newChildren = children.map((c) =>
-        c.id === action.itemId ? { ...c, sharing: action.sharing, modified: now, modifiedBy } : c
+        c.id === action.itemId ? { ...c, sharing: action.sharing, modified: now, modifiedBy: action.modifiedBy } : c
       );
       return {
         ...state,
@@ -164,6 +164,9 @@ type DataRoomContextValue = {
 const DataRoomContext = React.createContext<DataRoomContextValue | null>(null);
 
 export function DataRoomProvider({ children }: { children: React.ReactNode }) {
+  const { profile } = useAuth();
+  const currentUserDisplayName = profile?.name ?? "You";
+
   const [state, dispatch] = React.useReducer(reducer, {
     rootFolders: [],
     loading: true,
@@ -268,13 +271,13 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
 
   const moveItem = React.useCallback(
     (sourcePath: DataRoomPath, itemId: string, targetPath: DataRoomPath) =>
-      dispatch({ type: "MOVE_ITEM", sourcePath, itemId, targetPath }),
-    []
+      dispatch({ type: "MOVE_ITEM", sourcePath, itemId, targetPath, modifiedBy: currentUserDisplayName }),
+    [currentUserDisplayName]
   );
   const setSharing = React.useCallback(
     (path: DataRoomPath, itemId: string, sharing: string) =>
-      dispatch({ type: "SET_SHARING", path, itemId, sharing }),
-    []
+      dispatch({ type: "SET_SHARING", path, itemId, sharing, modifiedBy: currentUserDisplayName }),
+    [currentUserDisplayName]
   );
 
   const value: DataRoomContextValue = {

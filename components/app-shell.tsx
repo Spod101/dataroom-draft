@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { AuthProvider } from "@/contexts/auth-context";
 import { DataRoomProvider } from "@/contexts/dataroom-context";
 
 const AUTH_PATHS = ["/login", "/signup"];
@@ -16,11 +17,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <DataRoomProvider>
-      <SidebarProvider>
-        <AppSidebar />
-        {children}
-      </SidebarProvider>
-    </DataRoomProvider>
+    <AuthProvider>
+      <DataRoomProvider>
+        <SidebarProvider>
+          <AppSidebar />
+          {children}
+        </SidebarProvider>
+      </DataRoomProvider>
+    </AuthProvider>
   );
 }
