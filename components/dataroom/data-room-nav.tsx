@@ -10,6 +10,7 @@ import {
   Trash2Icon,
   FolderPlusIcon,
   PlusIcon,
+  HomeIcon,
 } from "lucide-react";
 import type { DataRoomPath, DataRoomFolder } from "@/lib/dataroom-types";
 import { isFolder } from "@/lib/dataroom-types";
@@ -44,12 +45,16 @@ type ContextMenuState = {
 export function DataRoomNav() {
   const pathname = usePathname();
   const toast = useToast();
-  const { state, getChildren, addFolder, renameItem, deleteItem } =
+  const { state, getChildren, addFolder, renameItem, deleteItem, reorderFolders, moveFolderToFolder } =
     useDataRoom();
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
   const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(
     null
   );
+  const [draggedId, setDraggedId] = React.useState<string | null>(null);
+  const [draggedParentPath, setDraggedParentPath] = React.useState<DataRoomPath>([]);
+  const [dragOverId, setDragOverId] = React.useState<string | null>(null);
+  const [dragOverType, setDragOverType] = React.useState<"reorder" | "move" | null>(null);
   const [renameOpen, setRenameOpen] = React.useState(false);
   const [renamePath, setRenamePath] = React.useState<DataRoomPath>([]);
   const [renameId, setRenameId] = React.useState("");
@@ -114,12 +119,161 @@ export function DataRoomNav() {
     closeContextMenu();
   };
 
-  const rootFolders = state.rootFolders;
+  const sortedRootFolders = React.useMemo(() => {
+    return [...state.rootFolders].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+  }, [state.rootFolders]);
+
+  const handleDragStart = (folderId: string, parentPath: DataRoomPath) => {
+    setDraggedId(folderId);
+    setDraggedParentPath(parentPath); // This is the parent of the dragged folder
+  };
+
+  const handleDragOver = (e: React.DragEvent, folderId: string, parentPath: DataRoomPath) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedId || draggedId === folderId) {
+      setDragOverId(null);
+      setDragOverType(null);
+      return;
+    }
+    
+    // Check if dragged folder and target folder are siblings (same parent)
+    const areSiblings = draggedParentPath.length === parentPath.length && 
+      draggedParentPath.every((slug, i) => slug === parentPath[i]);
+    
+    setDragOverId(folderId);
+    setDragOverType(areSiblings ? "reorder" : "move");
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetId: string, targetParentPath: DataRoomPath) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedId || draggedId === targetId) {
+      setDraggedId(null);
+      setDraggedParentPath([]);
+      setDragOverId(null);
+      setDragOverType(null);
+      return;
+    }
+    
+    // Check if they're siblings (share the same parent)
+    const areSiblings = draggedParentPath.length === targetParentPath.length && 
+      draggedParentPath.every((slug, i) => slug === targetParentPath[i]);
+    
+    try {
+      if (areSiblings) {
+        // Reorder within the same parent
+        const siblings = getChildren(targetParentPath).filter(isFolder);
+        const draggedIndex = siblings.findIndex((f) => f.id === draggedId);
+        const targetIndex = siblings.findIndex((f) => f.id === targetId);
+        
+        if (draggedIndex === -1 || targetIndex === -1) {
+          throw new Error("Invalid folder positions");
+        }
+        
+        const reordered = [...siblings];
+        const [removed] = reordered.splice(draggedIndex, 1);
+        reordered.splice(targetIndex, 0, removed);
+        
+        await reorderFolders(targetParentPath, reordered.map((f) => f.id));
+        toast.success("Folder reordered");
+      } else {
+        // Move to a different folder (target becomes the new parent)
+        await moveFolderToFolder(draggedId, targetId);
+        toast.success("Folder moved");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Operation failed");
+    }
+    
+    setDraggedId(null);
+    setDraggedParentPath([]);
+    setDragOverId(null);
+    setDragOverType(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedId(null);
+    setDraggedParentPath([]);
+    setDragOverId(null);
+    setDragOverType(null);
+  };
+
+  const isRootActive = pathname === "/dataroom";
+  const isRootDragOver = dragOverId === "root";
+
+  const handleRootDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedId) {
+      setDragOverId(null);
+      setDragOverType(null);
+      return;
+    }
+    
+    // If dragged folder is already at root level, it's a reorder
+    const isDraggedAtRoot = draggedParentPath.length === 0;
+    
+    setDragOverId("root");
+    setDragOverType(isDraggedAtRoot ? "reorder" : "move");
+  };
+
+  const handleRootDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedId) {
+      setDraggedId(null);
+      setDraggedParentPath([]);
+      setDragOverId(null);
+      setDragOverType(null);
+      return;
+    }
+    
+    // Check if already at root
+    const isDraggedAtRoot = draggedParentPath.length === 0;
+    
+    if (!isDraggedAtRoot) {
+      // Move to root
+      try {
+        await moveFolderToFolder(draggedId, null);
+        toast.success("Folder moved to root");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Failed to move to root");
+      }
+    }
+    // If already at root, do nothing (can't move root to root)
+    
+    setDraggedId(null);
+    setDraggedParentPath([]);
+    setDragOverId(null);
+    setDragOverType(null);
+  };
 
   return (
     <>
       <SidebarMenu>
-        {rootFolders.map((folder) => (
+        {/* Root navigation item - droppable */}
+        <SidebarMenuItem
+          onDragOver={handleRootDragOver}
+          onDrop={handleRootDrop}
+          className={cn(
+            isRootDragOver && dragOverType === "move" && "bg-green-500/20 rounded-md border-2 border-green-500/40"
+          )}
+        >
+          <SidebarMenuButton asChild isActive={isRootActive} className="font-semibold">
+            <Link href="/dataroom" className="flex items-center gap-2">
+              <HomeIcon className="size-4 shrink-0" />
+              <span className="truncate group-data-[collapsible=icon]:hidden">HSI DATA ROOM</span>
+            </Link>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+        
+        {/* Folder items */}
+        {sortedRootFolders.map((folder) => (
           <NavFolder
             key={folder.id}
             folder={folder}
@@ -133,6 +287,13 @@ export function DataRoomNav() {
               e.stopPropagation();
               setContextMenu({ x: e.clientX, y: e.clientY, path, folder: f });
             }}
+            draggedId={draggedId}
+            dragOverId={dragOverId}
+            dragOverType={dragOverType}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            onDragEnd={handleDragEnd}
           />
         ))}
       </SidebarMenu>
@@ -237,6 +398,13 @@ function NavFolder({
   expanded,
   toggleExpanded,
   onContextMenu,
+  draggedId,
+  dragOverId,
+  dragOverType,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
   folder: DataRoomFolder;
   path: DataRoomPath;
@@ -249,14 +417,23 @@ function NavFolder({
     path: DataRoomPath,
     folder: DataRoomFolder
   ) => void;
+  draggedId: string | null;
+  dragOverId: string | null;
+  dragOverType: "reorder" | "move" | null;
+  onDragStart: (folderId: string, path: DataRoomPath) => void;
+  onDragOver: (e: React.DragEvent, folderId: string, path: DataRoomPath) => void;
+  onDrop: (e: React.DragEvent, folderId: string, path: DataRoomPath) => void;
+  onDragEnd: () => void;
 }) {
   const fullPath = [...path, folder.slug];
   const key = pathKey(fullPath);
   const href = hrefForPath(fullPath);
   const isExpanded = expanded.has(key);
-  const childFolders = folder.children.filter((c): c is DataRoomFolder =>
-    isFolder(c)
-  );
+  const childFolders = React.useMemo(() => {
+    return folder.children
+      .filter((c): c is DataRoomFolder => isFolder(c))
+      .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
+  }, [folder.children]);
   const hasChildren = childFolders.length > 0;
   const isActive =
     pathname === href || (pathname.startsWith(href + "/") && pathname !== href);
@@ -272,8 +449,23 @@ function NavFolder({
             ? "pl-6"
             : "pl-8";
 
+  const isDragging = draggedId === folder.id;
+  const isDragOver = dragOverId === folder.id;
+
   return (
-    <SidebarMenuItem>
+    <SidebarMenuItem
+      draggable
+      onDragStart={() => onDragStart(folder.id, path)}
+      onDragOver={(e) => onDragOver(e, folder.id, path)}
+      onDrop={(e) => onDrop(e, folder.id, path)}
+      onDragEnd={onDragEnd}
+      className={cn(
+        "group/folder cursor-grab active:cursor-grabbing",
+        isDragging && "opacity-40",
+        isDragOver && dragOverType === "reorder" && "bg-primary/10 rounded-md",
+        isDragOver && dragOverType === "move" && "bg-green-500/20 rounded-md border-2 border-green-500/40"
+      )}
+    >
       <div
         className={cn(
           "flex w-full min-w-0 items-center gap-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:pl-0 group-data-[collapsible=icon]:gap-0",
@@ -319,6 +511,13 @@ function NavFolder({
               expanded={expanded}
               toggleExpanded={toggleExpanded}
               onContextMenu={onContextMenu}
+              draggedId={draggedId}
+              dragOverId={dragOverId}
+              dragOverType={dragOverType}
+              onDragStart={onDragStart}
+              onDragOver={onDragOver}
+              onDrop={onDrop}
+              onDragEnd={onDragEnd}
             />
           ))}
         </SidebarMenuSub>

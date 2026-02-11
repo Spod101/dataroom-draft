@@ -16,6 +16,8 @@ import {
   renameFile,
   deleteFolder,
   deleteFile,
+  updateFolderOrder,
+  moveFolderToParent,
 } from "@/lib/dataroom-supabase";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -49,6 +51,35 @@ function getFolderAtPath(
     ) as DataRoomFolder[];
   }
   return folder ?? null;
+}
+
+function getFolderById(
+  rootFolders: DataRoomFolder[],
+  folderId: string
+): DataRoomFolder | null {
+  for (const folder of rootFolders) {
+    if (folder.id === folderId) return folder;
+    const childFolders = folder.children.filter((c): c is DataRoomFolder => isFolder(c));
+    const found = getFolderById(childFolders, folderId);
+    if (found) return found;
+  }
+  return null;
+}
+
+function isDescendantOf(
+  rootFolders: DataRoomFolder[],
+  possibleDescendantId: string,
+  ancestorId: string
+): boolean {
+  const ancestor = getFolderById(rootFolders, ancestorId);
+  if (!ancestor) return false;
+  
+  const childFolders = ancestor.children.filter((c): c is DataRoomFolder => isFolder(c));
+  for (const child of childFolders) {
+    if (child.id === possibleDescendantId) return true;
+    if (isDescendantOf(rootFolders, possibleDescendantId, child.id)) return true;
+  }
+  return false;
 }
 
 function getChildrenAtPath(
@@ -99,6 +130,7 @@ type Action =
   | { type: "ADD_FILES_AT_PATH"; path: DataRoomPath; files: DataRoomFile[] }
   | { type: "MOVE_ITEM"; sourcePath: DataRoomPath; itemId: string; targetPath: DataRoomPath; modifiedBy: string }
   | { type: "SET_SHARING"; path: DataRoomPath; itemId: string; sharing: string; modifiedBy: string }
+  | { type: "REORDER_FOLDERS"; path: DataRoomPath; folderIds: string[] }
   | { type: "UPLOAD_START"; totalFiles: number; totalBytes: number }
   | { type: "UPLOAD_UPDATE"; completedFiles: number; uploadedBytes: number; currentFileName: string | null }
   | { type: "UPLOAD_END" };
@@ -162,6 +194,16 @@ function reducer(state: DataRoomState, action: Action): DataRoomState {
         : state;
     case "UPLOAD_END":
       return { ...state, upload: null };
+    case "REORDER_FOLDERS": {
+      const folders = getChildrenAtPath(state.rootFolders, action.path).filter(isFolder);
+      const files = getChildrenAtPath(state.rootFolders, action.path).filter(isFile);
+      const orderedFolders = action.folderIds
+        .map((id) => folders.find((f) => f.id === id))
+        .filter((f): f is DataRoomFolder => !!f)
+        .map((f, index) => ({ ...f, orderIndex: index }));
+      const newChildren = [...orderedFolders, ...files];
+      return { ...state, rootFolders: setChildrenAtPath(state.rootFolders, action.path, newChildren) };
+    }
     default:
       return state;
   }
@@ -195,6 +237,8 @@ type DataRoomContextValue = {
   replaceFile: (path: DataRoomPath, fileId: string, file: DataRoomFile) => void;
   moveItem: (sourcePath: DataRoomPath, itemId: string, targetPath: DataRoomPath) => void;
   setSharing: (path: DataRoomPath, itemId: string, sharing: string) => void;
+  reorderFolders: (path: DataRoomPath, folderIds: string[]) => Promise<void>;
+  moveFolderToFolder: (folderId: string, targetFolderId: string | null) => Promise<void>;
 };
 
 const DataRoomContext = React.createContext<DataRoomContextValue | null>(null);
@@ -370,6 +414,53 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     [currentUserDisplayName]
   );
 
+  const reorderFolders = React.useCallback(
+    async (path: DataRoomPath, folderIds: string[]) => {
+      // Optimistically update UI
+      dispatch({ type: "REORDER_FOLDERS", path, folderIds });
+      
+      // Persist to database
+      try {
+        const updates = folderIds.map((id, index) => ({ id, orderIndex: index }));
+        await updateFolderOrder(updates);
+      } catch (e) {
+        // If DB update fails, refresh to revert to DB state
+        console.error("Failed to update folder order:", e);
+        await refresh();
+      }
+    },
+    [refresh]
+  );
+
+  const moveFolderToFolder = React.useCallback(
+    async (folderId: string, targetFolderId: string | null) => {
+      // Prevent moving a folder into itself
+      if (folderId === targetFolderId) {
+        throw new Error("Cannot move a folder into itself");
+      }
+      
+      // Prevent moving a folder into its own descendant
+      if (targetFolderId && isDescendantOf(state.rootFolders, targetFolderId, folderId)) {
+        throw new Error("Cannot move a folder into its own subfolder");
+      }
+      
+      // Get the target folder's children to determine the order index
+      const targetChildren = targetFolderId === null 
+        ? state.rootFolders 
+        : getFolderById(state.rootFolders, targetFolderId)?.children.filter(isFolder) ?? [];
+      
+      const orderIndex = targetChildren.length; // Add to end
+      
+      try {
+        await moveFolderToParent(folderId, targetFolderId, orderIndex);
+        await refresh();
+      } catch (e) {
+        throw e;
+      }
+    },
+    [state.rootFolders, refresh]
+  );
+
   const value: DataRoomContextValue = {
     state,
     refresh,
@@ -383,6 +474,8 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     replaceFile,
     moveItem,
     setSharing,
+    reorderFolders,
+    moveFolderToFolder,
   };
 
   return (

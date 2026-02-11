@@ -30,6 +30,8 @@ export type DataRoomFolder = {
   modifiedBy: string;
   sharing: string;
   children: DataRoomItem[];
+  /** Order index for sidebar display (lower = higher in list) */
+  orderIndex?: number;
 };
 
 export type DataRoomItem = DataRoomFile | DataRoomFolder;

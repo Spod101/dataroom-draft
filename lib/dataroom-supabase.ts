@@ -13,6 +13,7 @@ type DbFolder = {
   last_modified: string;
   modified_by: string | null;
   is_deleted: boolean;
+  order_index: number | null;
 };
 
 type DbFile = {
@@ -87,6 +88,7 @@ function dbFolderToDataRoomFolder(
     modifiedBy: (row.modified_by && userDisplayNames.get(row.modified_by)) ?? "—",
     sharing: "Shared",
     children: [...childFolders, ...childFiles],
+    orderIndex: row.order_index ?? undefined,
   };
 }
 
@@ -112,7 +114,7 @@ export async function fetchDataRoomTree(): Promise<DataRoomFolder[]> {
   const [foldersRes, filesRes] = await Promise.all([
     supabase
       .from("folders")
-      .select("id, parent_folder_id, name, slug, description, last_modified, modified_by, is_deleted")
+      .select("id, parent_folder_id, name, slug, description, last_modified, modified_by, is_deleted, order_index")
       .eq("is_deleted", false),
     supabase
       .from("files")
@@ -153,12 +155,15 @@ export async function fetchDataRoomTree(): Promise<DataRoomFolder[]> {
 
   function buildFolder(row: DbFolder): DataRoomFolder {
     const childRows = folderRowsByParent.get(row.id) ?? [];
-    const childFolders = childRows.sort((a, b) => a.name.localeCompare(b.name)).map(buildFolder);
+    const childFolders = childRows
+      .sort((a, b) => (a.order_index ?? 999) - (b.order_index ?? 999) || a.name.localeCompare(b.name))
+      .map(buildFolder);
     const childFiles = (filesByFolder.get(row.id) ?? []).sort((a, b) => a.name.localeCompare(b.name));
     return dbFolderToDataRoomFolder(row, childFolders, childFiles, userDisplayNames);
   }
 
-  const rootRows = (folderRowsByParent.get(null) ?? []).sort((a, b) => a.name.localeCompare(b.name));
+  const rootRows = (folderRowsByParent.get(null) ?? [])
+    .sort((a, b) => (a.order_index ?? 999) - (b.order_index ?? 999) || a.name.localeCompare(b.name));
   return rootRows.map(buildFolder);
 }
 
@@ -578,5 +583,94 @@ export async function hardDeleteFile(fileId: string): Promise<void> {
     targetId: fileId,
     fileId: null,
     details: { deleted_file_id: fileId },
+  });
+}
+
+/** Update folder order indexes (for drag-to-reorder). */
+export async function updateFolderOrder(updates: Array<{ id: string; orderIndex: number }>): Promise<void> {
+  // Update each folder's order_index
+  const promises = updates.map(({ id, orderIndex }) =>
+    supabase
+      .from("folders")
+      .update({ order_index: orderIndex })
+      .eq("id", id)
+  );
+  
+  const results = await Promise.all(promises);
+  const failed = results.find((r) => r.error);
+  if (failed?.error) throw new Error(failed.error.message);
+}
+
+/** Move folder to a different parent (null = root). */
+export async function moveFolderToParent(
+  folderId: string,
+  newParentId: string | null,
+  orderIndex: number
+): Promise<void> {
+  await assertCanEditFolder(folderId, "move folders");
+  
+  // Get current folder info (including old parent)
+  const { data: folderData, error: folderError } = await supabase
+    .from("folders")
+    .select("name, parent_folder_id")
+    .eq("id", folderId)
+    .eq("is_deleted", false)
+    .maybeSingle();
+  
+  if (folderError || !folderData) throw new Error("Folder not found");
+  
+  const oldParentId = (folderData as { parent_folder_id: string | null }).parent_folder_id;
+  const folderName = (folderData as { name: string }).name;
+  
+  // Get old parent name (if exists)
+  let oldParentName = "Root";
+  if (oldParentId) {
+    const { data: oldParentData } = await supabase
+      .from("folders")
+      .select("name")
+      .eq("id", oldParentId)
+      .maybeSingle();
+    if (oldParentData) {
+      oldParentName = (oldParentData as { name: string }).name;
+    }
+  }
+  
+  // Get new parent name (if exists)
+  let newParentName = "Root";
+  if (newParentId) {
+    const { data: newParentData, error } = await supabase
+      .from("folders")
+      .select("name")
+      .eq("id", newParentId)
+      .eq("is_deleted", false)
+      .maybeSingle();
+    if (error || !newParentData) throw new Error("Target folder not found");
+    newParentName = (newParentData as { name: string }).name;
+  }
+  
+  const modifiedBy = await getCurrentUserId();
+  const { error } = await supabase
+    .from("folders")
+    .update({
+      parent_folder_id: newParentId,
+      order_index: orderIndex,
+      last_modified: new Date().toISOString(),
+      modified_by: modifiedBy,
+    })
+    .eq("id", folderId);
+    
+  if (error) throw new Error(error.message);
+  
+  await logAuditEvent("folder.move", "folder", {
+    targetId: folderId,
+    folderId,
+    details: {
+      folderName,
+      oldParentId,
+      oldParentName,
+      newParentId,
+      newParentName,
+      description: `Moved "${folderName}" from "${oldParentName}" to "${newParentName}"`,
+    },
   });
 }
