@@ -412,20 +412,14 @@ export default function IndustryPage() {
       </div>
 
       <div className="flex flex-1 flex-col p-6 gap-4">
-        <div className="flex flex-row flex-wrap items-center gap-3">
-          <NewDropdown
-            onNewFolder={() => setNewFolderOpen(true)}
-            onFileUpload={() => setUploadDialogOpen(true)}
-            onFolderUpload={() => setUploadDialogOpen(true)}
-          />
-          <div className="flex-1 min-w-[200px]">
-            <DataRoomControls
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              onDownload={handleFolderDownload}
-            />
-          </div>
-        </div>
+        <DataRoomControls
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onDownload={handleFolderDownload}
+          onNewFolder={() => setNewFolderOpen(true)}
+          onFileUpload={() => setUploadDialogOpen(true)}
+          onFolderUpload={() => setUploadDialogOpen(true)}
+        />
 
         <UploadFilesDialog
           open={uploadDialogOpen}

@@ -536,27 +536,21 @@ export default function FolderPage() {
             </div>
           </div>
         )}
-        <div className="flex flex-row flex-wrap items-center gap-3">
-          <NewDropdown
-            onNewFolder={() => setNewFolderOpen(true)}
-            onFileUpload={() => setUploadDialogOpen(true)}
-            onFolderUpload={() => setUploadDialogOpen(true)}
-          />
-          <div className="flex-1 min-w-[200px]">
-            <DataRoomControls
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              onDownload={handleFolderDownload}
-              searchPlaceholder="Search files and folders..."
-              searchValue={searchValue}
-              onSearch={setSearchValue}
-              fileTypeValue={fileTypeFilter}
-              onFileTypeChange={setFileTypeFilter}
-              dateValue={dateFilter}
-              onDateChange={setDateFilter}
-            />
-          </div>
-        </div>
+        <DataRoomControls
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onDownload={handleFolderDownload}
+          searchPlaceholder="Search files and folders..."
+          searchValue={searchValue}
+          onSearch={setSearchValue}
+          fileTypeValue={fileTypeFilter}
+          onFileTypeChange={setFileTypeFilter}
+          dateValue={dateFilter}
+          onDateChange={setDateFilter}
+          onNewFolder={() => setNewFolderOpen(true)}
+          onFileUpload={() => setUploadDialogOpen(true)}
+          onFolderUpload={() => setUploadDialogOpen(true)}
+        />
 
         <UploadFilesDialog
           open={uploadDialogOpen}
