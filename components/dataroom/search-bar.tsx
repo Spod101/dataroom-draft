@@ -25,9 +25,9 @@ export function SearchBar({
           placeholder={placeholder}
           value={value}
           onChange={(e) => onSearch?.(e.target.value)}
-          className="pr-9 h-9 border-primary/20 focus-visible:ring-primary/20"
+          className="pr-12 h-12 border-border focus-visible:ring-primary/20 text-lg"
         />
-        <SearchIcon className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <SearchIcon className="absolute right-4 top-1/2 h-6 w-6 -translate-y-1/2 text-muted-foreground" />
       </div>
     );
   }

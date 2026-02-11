@@ -37,12 +37,12 @@ export function DownloadButton({
     <Button 
       variant="outline" 
       size={size}
-      className="border-primary/30 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary/50 gap-2"
+      className="h-12 px-5 border-border text-muted-foreground hover:text-primary hover:bg-primary/10 hover:border-primary/40 gap-2.5 text-lg"
       onClick={onClick}
     >
-      <DownloadIcon className="h-4 w-4" />
+      <DownloadIcon className="h-6 w-6" />
       Download
-      {showDropdown && <ChevronDownIcon className="h-4 w-4" />}
+      {showDropdown && <ChevronDownIcon className="h-6 w-6" />}
     </Button>
   );
 }

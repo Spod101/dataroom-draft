@@ -54,6 +54,7 @@ import { PasteUploadHandler } from "@/components/dataroom/paste-upload-handler";
 import { DropZoneUploadDialog } from "@/components/dataroom/drop-zone-upload-dialog";
 import { TableSkeleton } from "@/components/dataroom/table-skeleton";
 import { GridSkeleton } from "@/components/dataroom/grid-skeleton";
+import { UploadFilesDialog } from "@/components/dataroom/upload-files-dialog";
 
 const ROOT_PATH: string[] = [];
 
@@ -79,6 +80,7 @@ export default function DataRoomPage() {
   const [dragCounter, setDragCounter] = React.useState(0);
   const [droppedFiles, setDroppedFiles] = React.useState<File[]>([]);
   const [dropDialogOpen, setDropDialogOpen] = React.useState(false);
+  const [uploadDialogOpen, setUploadDialogOpen] = React.useState(false);
 
   const hasSearch = searchValue.trim() !== "";
   const flattenedItems = React.useMemo(() => getFlattenedItems(state.rootFolders), [state.rootFolders]);
@@ -311,6 +313,17 @@ export default function DataRoomPage() {
     }
   };
 
+  const handleFileUploadFromDialog = async (files: any[], rawFiles?: File[]) => {
+    if (!rawFiles?.length) return;
+    try {
+      await uploadFiles(ROOT_PATH, rawFiles);
+      toast.success(`Uploaded ${rawFiles.length} file${rawFiles.length > 1 ? "s" : ""}`);
+      setUploadDialogOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    }
+  };
+
   return (
     <SidebarInset>
       <header className="bg-background sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
@@ -382,6 +395,8 @@ export default function DataRoomPage() {
           dateValue={dateFilter}
           onDateChange={setDateFilter}
           onDownload={handleRootDownload}
+          onNewFolder={() => setNewFolderOpen(true)}
+          onFileUpload={() => setUploadDialogOpen(true)}
         />
 
         <div className="flex-1">
@@ -790,6 +805,13 @@ export default function DataRoomPage() {
         open={dropDialogOpen}
         onOpenChange={setDropDialogOpen}
         onUpload={handleDropUpload}
+      />
+
+      {/* Upload files dialog */}
+      <UploadFilesDialog
+        open={uploadDialogOpen}
+        onOpenChange={setUploadDialogOpen}
+        onFiles={handleFileUploadFromDialog}
       />
     </SidebarInset>
   );
