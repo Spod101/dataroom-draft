@@ -52,6 +52,8 @@ import {
 import { TablePagination, PAGE_SIZE } from "@/components/ui/table-pagination";
 import { PasteUploadHandler } from "@/components/dataroom/paste-upload-handler";
 import { DropZoneUploadDialog } from "@/components/dataroom/drop-zone-upload-dialog";
+import { TableSkeleton } from "@/components/dataroom/table-skeleton";
+import { GridSkeleton } from "@/components/dataroom/grid-skeleton";
 
 const ROOT_PATH: string[] = [];
 
@@ -369,9 +371,6 @@ export default function DataRoomPage() {
             {state.error}
           </div>
         )}
-        {state.loading && folders.length === 0 ? (
-          <p className="text-muted-foreground text-sm">Loading...</p>
-        ) : null}
         <DataRoomControls
           viewMode={viewMode}
           onViewModeChange={setViewMode}
@@ -386,7 +385,15 @@ export default function DataRoomPage() {
         />
 
         <div className="flex-1">
-          {hasActiveSearchOrFilter ? (
+          {state.loading ? (
+            viewMode === "list" || hasActiveSearchOrFilter ? (
+              <Card className="border-primary/20">
+                <TableSkeleton rows={8} showLocationColumn={showLocationColumn} />
+              </Card>
+            ) : (
+              <GridSkeleton items={6} />
+            )
+          ) : hasActiveSearchOrFilter ? (
             <Card className="border-primary/20">
               <Table>
                 <TableHeader>

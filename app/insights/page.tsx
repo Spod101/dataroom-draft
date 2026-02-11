@@ -15,6 +15,7 @@ import { SearchBar } from "@/components/dataroom/search-bar";
 import { FileTextIcon, UsersIcon, EyeIcon, DownloadIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
+import { InsightsFileListSkeleton, InsightsStatsSkeleton, InsightsUserTableSkeleton } from "@/components/insights/insights-skeleton";
 
 type FileSummary = {
   id: string;
@@ -286,11 +287,7 @@ export default function InsightsPage() {
             </div>
 
             <div className="flex-1 overflow-auto px-2">
-              {loading && (
-                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-                  Loading insights...
-                </div>
-              )}
+              {loading && <InsightsFileListSkeleton />}
               {!loading && filteredFiles.length === 0 && (
                 <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
                   No file events yet.
@@ -322,41 +319,45 @@ export default function InsightsPage() {
         </Card>
 
         <div className="flex-1 flex flex-col gap-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
-                  <EyeIcon className="h-4 w-4" />
-                  <span>Total views</span>
-                </div>
-                <p className="text-3xl font-bold">
-                  {selectedFile ? selectedFile.views : 0}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
-                  <DownloadIcon className="h-4 w-4" />
-                  <span>Total downloads</span>
-                </div>
-                <p className="text-3xl font-bold">
-                  {selectedFile ? selectedFile.downloads : 0}
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
-                  <UsersIcon className="h-4 w-4" />
-                  <span>Unique users</span>
-                </div>
-                <p className="text-3xl font-bold">
-                  {selectedFile ? userStats.length : 0}
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+          {loading ? (
+            <InsightsStatsSkeleton />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+                    <EyeIcon className="h-4 w-4" />
+                    <span>Total views</span>
+                  </div>
+                  <p className="text-3xl font-bold">
+                    {selectedFile ? selectedFile.views : 0}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+                    <DownloadIcon className="h-4 w-4" />
+                    <span>Total downloads</span>
+                  </div>
+                  <p className="text-3xl font-bold">
+                    {selectedFile ? selectedFile.downloads : 0}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-2 text-muted-foreground text-sm mb-1">
+                    <UsersIcon className="h-4 w-4" />
+                    <span>Unique users</span>
+                  </div>
+                  <p className="text-3xl font-bold">
+                    {selectedFile ? userStats.length : 0}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           <Card>
             <CardHeader className="pb-2">
@@ -410,12 +411,13 @@ export default function InsightsPage() {
               </div>
 
               <div className="divide-y">
+                {loading && <InsightsUserTableSkeleton />}
                 {selectedFile && !loading && filteredUserStats.length === 0 && (
                   <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
                     No user activity for this file yet.
                   </div>
                 )}
-                {selectedFile &&
+                {!loading && selectedFile &&
                   filteredUserStats.map((user) => (
                     <div key={user.userId ?? "anonymous"} className="flex items-center py-3 px-2">
                       <div className="flex items-center gap-3 flex-1">

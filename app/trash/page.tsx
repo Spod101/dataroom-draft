@@ -27,6 +27,9 @@ import { listTrash, restoreFolder, restoreFile, hardDeleteFolder, hardDeleteFile
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/contexts/auth-context";
 import { FilterSelect } from "@/components/dataroom/filter-select";
+import { TablePagination } from "@/components/ui/table-pagination";
+
+const PAGE_SIZE = 10;
 
 export default function TrashPage() {
   const { profile } = useAuth();
@@ -114,11 +117,27 @@ export default function TrashPage() {
     ? allFiles.filter((f) => f.deleted_by === currentUserId)
     : allFiles;
 
-  const hasItems = folders.length > 0 || files.length > 0;
-  const totalItems = folders.length + files.length;
+  // Combine folders and files for pagination
+  const allItems = [
+    ...folders.map((f) => ({ ...f, itemType: 'folder' as const })),
+    ...files.map((f) => ({ ...f, itemType: 'file' as const })),
+  ];
+
+  const hasItems = allItems.length > 0;
+  const totalItems = allItems.length;
   const selectedCount = selectedFolderIds.size + selectedFileIds.size;
   const allSelected = totalItems > 0 && selectedCount === totalItems;
   const someSelected = selectedCount > 0;
+
+  // Pagination
+  const [page, setPage] = React.useState(1);
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const paginatedItems = allItems.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  
+  // Reset to first page when filter changes
+  React.useEffect(() => setPage(1), [filterBy]);
+  // Keep current page when data changes; clamp if page becomes invalid
+  React.useEffect(() => setPage((p) => Math.min(Math.max(p, 1), totalPages)), [totalPages]);
 
   const toggleFolder = (id: string) => {
     setSelectedFolderIds((prev) => {
@@ -308,106 +327,80 @@ export default function TrashPage() {
             )}
 
             {!loading && !error && hasItems && (
-              <div className="divide-y">
-                {folders.map((folder) => (
-                  <div
-                    key={`folder-${folder.id}`}
-                    className={`flex items-center gap-4 px-6 py-3 hover:bg-accent/40 transition-colors ${selectedFolderIds.has(folder.id) ? "bg-accent/40" : ""}`}
-                  >
-                    <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selectedFolderIds.has(folder.id)}
-                        onCheckedChange={() => toggleFolder(folder.id)}
-                        aria-label={`Select ${folder.name}`}
-                      />
-                    </div>
-                    <div className="w-6 text-primary shrink-0">
-                      <Trash2Icon className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{folder.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        Folder · Deleted {folder.deleted_at
-                          ? new Date(folder.deleted_at).toLocaleString()
-                          : "Unknown"}
-                        {isAdmin && folder.deleted_by_name && (
-                          <span className="ml-1">
-                            by <span className="font-medium">{folder.deleted_by_name}</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleRestoreFolder(folder.id)}
-                      >
-                        Restore
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => handleHardDeleteFolder(folder.id)}
-                      >
-                        Delete forever
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+              <>
+                <div className="divide-y">
+                  {paginatedItems.map((item) => {
+                    const isFolder = item.itemType === 'folder';
+                    const isSelected = isFolder 
+                      ? selectedFolderIds.has(item.id) 
+                      : selectedFileIds.has(item.id);
+                    const toggleItem = isFolder ? toggleFolder : toggleFile;
+                    const handleRestore = isFolder ? handleRestoreFolder : handleRestoreFile;
+                    const handleHardDelete = isFolder ? handleHardDeleteFolder : handleHardDeleteFile;
 
-                {files.map((file) => (
-                  <div
-                    key={`file-${file.id}`}
-                    className={`flex items-center gap-4 px-6 py-3 hover:bg-accent/40 transition-colors ${selectedFileIds.has(file.id) ? "bg-accent/40" : ""}`}
-                  >
-                    <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selectedFileIds.has(file.id)}
-                        onCheckedChange={() => toggleFile(file.id)}
-                        aria-label={`Select ${file.name}`}
-                      />
-                    </div>
-                    <div className="w-6 text-muted-foreground shrink-0">
-                      {/* simple dot for file */}
-                      <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{file.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        File · Deleted {file.deleted_at
-                          ? new Date(file.deleted_at).toLocaleString()
-                          : "Unknown"}
-                        {isAdmin && file.deleted_by_name && (
-                          <span className="ml-1">
-                            by <span className="font-medium">{file.deleted_by_name}</span>
-                          </span>
-                        )}
+                    return (
+                      <div
+                        key={`${item.itemType}-${item.id}`}
+                        className={`flex items-center gap-4 px-6 py-3 hover:bg-accent/40 transition-colors ${isSelected ? "bg-accent/40" : ""}`}
+                      >
+                        <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleItem(item.id)}
+                            aria-label={`Select ${item.name}`}
+                          />
+                        </div>
+                        <div className={`w-6 shrink-0 ${isFolder ? "text-primary" : "text-muted-foreground"}`}>
+                          {isFolder ? (
+                            <Trash2Icon className="h-4 w-4" />
+                          ) : (
+                            <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{item.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {isFolder ? 'Folder' : 'File'} · Deleted {item.deleted_at
+                              ? new Date(item.deleted_at).toLocaleString()
+                              : "Unknown"}
+                            {isAdmin && item.deleted_by_name && (
+                              <span className="ml-1">
+                                by <span className="font-medium">{item.deleted_by_name}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleRestore(item.id)}
+                          >
+                            Restore
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleHardDelete(item.id)}
+                          >
+                            Delete forever
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleRestoreFile(file.id)}
-                      >
-                        Restore
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => handleHardDeleteFile(file.id)}
-                      >
-                        Delete forever
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                    );
+                  })}
+                </div>
+                {totalPages > 1 && (
+                  <TablePagination
+                    currentPage={page}
+                    totalPages={totalPages}
+                    totalItems={totalItems}
+                    onPageChange={setPage}
+                  />
+                )}
+              </>
             )}
           </CardContent>
         </Card>

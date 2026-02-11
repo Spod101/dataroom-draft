@@ -14,7 +14,9 @@ import { Button } from "@/components/ui/button";
 import { SearchBar } from "@/components/dataroom/search-bar";
 import { FilterSelect } from "@/components/dataroom/filter-select";
 import { DownloadButton } from "@/components/dataroom/download-button";
-import { TablePagination, PAGE_SIZE } from "@/components/ui/table-pagination";
+import { TablePagination } from "@/components/ui/table-pagination";
+
+const PAGE_SIZE = 10;
 import { ChevronDownIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";

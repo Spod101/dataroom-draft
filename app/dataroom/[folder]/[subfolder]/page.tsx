@@ -62,6 +62,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { TablePagination, PAGE_SIZE } from "@/components/ui/table-pagination";
 import { PasteUploadHandler } from "@/components/dataroom/paste-upload-handler";
 import { DropZoneUploadDialog } from "@/components/dataroom/drop-zone-upload-dialog";
+import { TableSkeleton } from "@/components/dataroom/table-skeleton";
+import { GridSkeleton } from "@/components/dataroom/grid-skeleton";
 
 function getItemIcon(item: DataRoomItem, size: "sm" | "lg" = "lg") {
   const sizeClass = size === "sm" ? "h-5 w-5" : "h-10 w-10";
@@ -572,7 +574,15 @@ export default function SubfolderPage() {
         )}
 
         <div className="flex-1">
-          {viewMode === "list" ? (
+          {state.loading ? (
+            viewMode === "list" ? (
+              <Card className="border-primary/20">
+                <TableSkeleton rows={8} showLocationColumn={showLocationColumn} showCheckbox={true} />
+              </Card>
+            ) : (
+              <GridSkeleton items={8} />
+            )
+          ) : viewMode === "list" ? (
             <Card className="border-primary/20">
               <Table>
                 <TableHeader>

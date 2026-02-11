@@ -526,20 +526,57 @@ export async function deleteFolder(folderId: string): Promise<void> {
 export async function renameFile(fileId: string, newName: string): Promise<void> {
   await assertCanEditFile(fileId, "rename");
   
-  // Get old name before renaming
+  // Get old file data before renaming
   const { data: oldData } = await supabase
     .from("files")
-    .select("name")
+    .select("name, storage_path, item_type")
     .eq("id", fileId)
     .maybeSingle();
-  const oldName = oldData ? (oldData as { name: string }).name : undefined;
   
+  if (!oldData) throw new Error("File not found");
+  
+  const oldName = (oldData as { name: string; storage_path: string | null; item_type: string }).name;
+  const oldStoragePath = (oldData as { name: string; storage_path: string | null; item_type: string }).storage_path;
+  const itemType = (oldData as { name: string; storage_path: string | null; item_type: string }).item_type;
+  
+  let newStoragePath = oldStoragePath;
+  
+  // If this is a file (not a link) and has a storage path, rename the physical file in storage
+  if (itemType === "file" && oldStoragePath) {
+    // Extract folder and file ID from old path: {folderId}/{fileId}/{oldFilename}
+    const pathParts = oldStoragePath.split("/");
+    if (pathParts.length >= 3) {
+      const folderId = pathParts[0];
+      const storedFileId = pathParts[1];
+      newStoragePath = `${folderId}/${storedFileId}/${newName}`;
+      
+      // Copy file to new path in storage
+      const { error: copyError } = await supabase.storage
+        .from(BUCKET_NAME)
+        .copy(oldStoragePath, newStoragePath);
+      
+      if (copyError) throw new Error(`Failed to rename file in storage: ${copyError.message}`);
+      
+      // Delete old file from storage
+      const { error: deleteError } = await supabase.storage
+        .from(BUCKET_NAME)
+        .remove([oldStoragePath]);
+      
+      if (deleteError) {
+        // Log warning but don't fail - the new file exists
+        console.warn(`Warning: Could not delete old file from storage: ${deleteError.message}`);
+      }
+    }
+  }
+  
+  // Update database with new name and storage path
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("files")
     .update({
       name: newName,
       filename: newName,
+      storage_path: newStoragePath,
       last_modified: new Date().toISOString(),
       modified_by: modifiedBy,
     })
