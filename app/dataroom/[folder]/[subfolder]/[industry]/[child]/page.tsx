@@ -58,6 +58,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { TablePagination, PAGE_SIZE } from "@/components/ui/table-pagination";
 
 function getItemIcon(item: DataRoomItem, size: "sm" | "lg" = "lg") {
   const sizeClass = size === "sm" ? "h-5 w-5" : "h-10 w-10";
@@ -121,6 +122,13 @@ export default function IndustryChildPage() {
     () => new Set(children.filter(isFile).map((f) => f.name)),
     [children]
   );
+
+  const totalItems = children.length;
+  const [page, setPage] = React.useState(1);
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const paginatedChildren = children.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Keep current page when data changes; clamp if page becomes invalid.
+  React.useEffect(() => setPage((p) => Math.min(Math.max(p, 1), totalPages)), [totalPages]);
 
   const handleRename = async (newName: string) => {
     if (!renameItemId) return;
@@ -200,7 +208,7 @@ export default function IndustryChildPage() {
   };
 
   const handleDownload = (file: DataRoomFile) => {
-    downloadFile(file);
+    downloadFile(file).catch((err) => toast.error(err instanceof Error ? err.message : "Download failed"));
   };
 
   const handleUpload = (files: DataRoomFile[], rawFiles?: File[]) => {
@@ -254,8 +262,9 @@ export default function IndustryChildPage() {
 
   const handleFolderDownload = () => {
     const name = folder?.name ?? childSlug ?? "Folder";
-    downloadFolderZip(name);
-    toast.success(`Downloading "${name}" as ZIP`);
+    downloadFolderZip(path, state.rootFolders, name)
+      .then(() => toast.success(`Downloaded "${name}" as ZIP`))
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Download failed"));
   };
 
   const handleNewFolder = async (name: string) => {
@@ -459,7 +468,7 @@ export default function IndustryChildPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {children.map((item) => (
+                  {paginatedChildren.map((item) => (
                     <TableRow
                       key={item.id}
                       className={`cursor-pointer hover:bg-primary/5 group ${selectedIds.has(item.id) ? "bg-primary/5" : ""}`}
@@ -559,6 +568,14 @@ export default function IndustryChildPage() {
                   ))}
                 </TableBody>
               </Table>
+              {totalPages > 1 && (
+                <TablePagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  onPageChange={setPage}
+                />
+              )}
             </Card>
           ) : (
             <div>
@@ -575,7 +592,7 @@ export default function IndustryChildPage() {
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {children.map((item) => (
+              {paginatedChildren.map((item) => (
                 <Card
                   key={item.id}
                   className={`group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full ${selectedIds.has(item.id) ? "ring-2 ring-primary" : ""}`}
@@ -690,6 +707,14 @@ export default function IndustryChildPage() {
                   </div>
                 </CardContent>
               </Card>
+              {totalPages > 1 && (
+                <TablePagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  onPageChange={setPage}
+                />
+              )}
             </div>
             </div>
           )}

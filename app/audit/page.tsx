@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { SearchBar } from "@/components/dataroom/search-bar";
 import { FilterSelect } from "@/components/dataroom/filter-select";
 import { DownloadButton } from "@/components/dataroom/download-button";
+import { TablePagination, PAGE_SIZE } from "@/components/ui/table-pagination";
 import { ChevronDownIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -216,6 +217,14 @@ export default function AuditPage() {
     return matchesSearch && matchesMember && matchesAction;
   });
 
+  const [page, setPage] = React.useState(1);
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE));
+  const paginatedLogs = filteredLogs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Reset to first page only when the user changes filters/search.
+  React.useEffect(() => setPage(1), [searchTerm, memberFilter, actionFilter]);
+  // Keep current page when data changes; clamp if page becomes invalid.
+  React.useEffect(() => setPage((p) => Math.min(Math.max(p, 1), totalPages)), [totalPages]);
+
   return (
     <SidebarInset>
       <header className="bg-background sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
@@ -294,7 +303,7 @@ export default function AuditPage() {
               )}
               {!loading &&
                 !error &&
-                filteredLogs.map((log) => (
+                paginatedLogs.map((log) => (
                   <div
                     key={log.id}
                     className="grid grid-cols-[160px_1fr_140px_2fr] gap-4 px-6 py-4 hover:bg-accent/50 transition-colors items-center"
@@ -314,6 +323,15 @@ export default function AuditPage() {
                   </div>
                 ))}
             </div>
+
+            {!loading && !error && filteredLogs.length > 0 && (
+              <TablePagination
+                currentPage={page}
+                totalPages={totalPages}
+                totalItems={filteredLogs.length}
+                onPageChange={setPage}
+              />
+            )}
 
             {!loading && error && (
               <div className="flex items-center justify-center py-12 text-muted-foreground">

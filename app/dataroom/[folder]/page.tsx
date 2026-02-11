@@ -64,6 +64,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
+import { TablePagination, PAGE_SIZE } from "@/components/ui/table-pagination";
 
 function getItemIcon(item: DataRoomItem, size: "sm" | "lg" = "lg") {
   const sizeClass = size === "sm" ? "h-5 w-5" : "h-10 w-10";
@@ -117,6 +118,15 @@ export default function FolderPage() {
   }, [hasSearch, filteredGlobalItems, filteredFolderItems]);
   const showLocationColumn = hasSearch;
   const hasActiveSearchOrFilter = hasSearch || fileTypeFilter !== "all" || dateFilter !== "";
+
+  const totalItems = displayItemsWithPath.length;
+  const [page, setPage] = React.useState(1);
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const paginatedDisplayItems = displayItemsWithPath.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Reset to first page only when the user changes search/filters.
+  React.useEffect(() => setPage(1), [searchValue, fileTypeFilter, dateFilter]);
+  // Keep current page when data changes; clamp if page becomes invalid.
+  React.useEffect(() => setPage((p) => Math.min(Math.max(p, 1), totalPages)), [totalPages]);
 
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
   const ignoreNextRowClickRef = React.useRef(false);
@@ -235,7 +245,7 @@ export default function FolderPage() {
   };
 
   const handleDownload = (file: DataRoomFile) => {
-    downloadFile(file);
+    downloadFile(file).catch((err) => toast.error(err instanceof Error ? err.message : "Download failed"));
   };
 
   const handleUpload = (files: DataRoomFile[], rawFiles?: File[]) => {
@@ -289,8 +299,9 @@ export default function FolderPage() {
 
   const handleFolderDownload = () => {
     const name = folder?.name ?? folderSlug ?? "Folder";
-    downloadFolderZip(name);
-    toast.success(`Downloading "${name}" as ZIP`);
+    downloadFolderZip(path, state.rootFolders, name)
+      .then(() => toast.success(`Downloaded "${name}" as ZIP`))
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Download failed"));
   };
 
   const handleNewFolder = async (name: string) => {
@@ -505,7 +516,7 @@ export default function FolderPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {displayItemsWithPath.map(({ item, path: rowPath }) => (
+                  {paginatedDisplayItems.map(({ item, path: rowPath }) => (
                     <TableRow
                       key={item.id}
                       className={`cursor-pointer hover:bg-primary/5 group ${selectedIds.has(item.id) ? "bg-primary/5" : ""}`}
@@ -612,6 +623,14 @@ export default function FolderPage() {
                   ))}
                 </TableBody>
               </Table>
+              {totalPages > 1 && (
+                <TablePagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  onPageChange={setPage}
+                />
+              )}
             </Card>
           ) : (
             <div>
@@ -628,7 +647,7 @@ export default function FolderPage() {
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {displayItemsWithPath.map(({ item, path: rowPath }) =>
+              {paginatedDisplayItems.map(({ item, path: rowPath }) =>
                 isFolder(item) ? (
                   <Card
                     key={item.id}
@@ -838,6 +857,14 @@ export default function FolderPage() {
                     </div>
                   </CardContent>
                 </Card>
+              )}
+              {totalPages > 1 && (
+                <TablePagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  onPageChange={setPage}
+                />
               )}
             </div>
             </div>

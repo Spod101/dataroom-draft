@@ -49,6 +49,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { TablePagination, PAGE_SIZE } from "@/components/ui/table-pagination";
 
 const ROOT_PATH: string[] = [];
 
@@ -96,6 +97,16 @@ export default function DataRoomPage() {
   }, [hasSearch, filteredGlobalItems, filteredRootItems]);
   const showLocationColumn = hasSearch;
   const hasActiveSearchOrFilter = hasSearch || fileTypeFilter !== "all" || dateFilter !== "";
+
+  const totalItems = hasActiveSearchOrFilter ? displayItemsWithPath.length : state.rootFolders.length;
+  const [page, setPage] = React.useState(1);
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const paginatedDisplayItems = displayItemsWithPath.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const paginatedFolders = state.rootFolders.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  // Reset to first page only when the user changes search/filters.
+  React.useEffect(() => setPage(1), [searchValue, fileTypeFilter, dateFilter]);
+  // Keep current page when data changes; clamp if page becomes invalid.
+  React.useEffect(() => setPage((p) => Math.min(Math.max(p, 1), totalPages)), [totalPages]);
 
   const [newFolderOpen, setNewFolderOpen] = React.useState(false);
   const [renameOpen, setRenameOpen] = React.useState(false);
@@ -208,8 +219,9 @@ export default function DataRoomPage() {
   };
 
   const handleRootDownload = () => {
-    downloadFolderZip("Data Room");
-    toast.success('Downloading "Data Room" as ZIP');
+    downloadFolderZip([], state.rootFolders, "Data Room")
+      .then(() => toast.success('Downloaded "Data Room" as ZIP'))
+      .catch((e) => toast.error(e instanceof Error ? e.message : "Download failed"));
   };
 
   const openMove = (item: DataRoomItem, itemPath: DataRoomPath) => {
@@ -305,7 +317,7 @@ export default function DataRoomPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {displayItemsWithPath.map(({ item, path: rowPath }) => (
+                  {paginatedDisplayItems.map(({ item, path: rowPath }) => (
                     <TableRow
                       key={item.id}
                       className="cursor-pointer hover:bg-primary/5 group"
@@ -376,7 +388,7 @@ export default function DataRoomPage() {
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   className="focus:bg-primary/10 focus:text-primary"
-                                  onSelect={(e) => { e.preventDefault(); downloadFile(item); }}
+                                  onSelect={(e) => { e.preventDefault(); downloadFile(item).catch((err) => toast.error(err instanceof Error ? err.message : "Download failed")); }}
                                 >
                                   Download
                                 </DropdownMenuItem>
@@ -396,10 +408,19 @@ export default function DataRoomPage() {
                   ))}
                 </TableBody>
               </Table>
+              {totalPages > 1 && (
+                <TablePagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  onPageChange={setPage}
+                />
+              )}
             </Card>
           ) : viewMode === "grid" ? (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
-              {folders.map((folder) => (
+              {paginatedFolders.map((folder) => (
                 <Card
                   key={folder.id}
                   className="group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full"
@@ -486,6 +507,15 @@ export default function DataRoomPage() {
                 </CardContent>
               </Card>
             </div>
+            {totalPages > 1 && (
+              <TablePagination
+                currentPage={page}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                onPageChange={setPage}
+              />
+            )}
+            </>
           ) : (
             <Card className="border-primary/20">
               <Table>
@@ -499,7 +529,7 @@ export default function DataRoomPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {folders.map((folder) => (
+                  {paginatedFolders.map((folder) => (
                     <TableRow
                       key={folder.id}
                       className="cursor-pointer hover:bg-primary/5 group"
@@ -575,6 +605,14 @@ export default function DataRoomPage() {
                   ))}
                 </TableBody>
               </Table>
+              {totalPages > 1 && (
+                <TablePagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  totalItems={totalItems}
+                  onPageChange={setPage}
+                />
+              )}
             </Card>
           )}
         </div>
