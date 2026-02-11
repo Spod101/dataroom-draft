@@ -23,14 +23,7 @@ import { UploadDropZone, filesToDataRoomFiles } from "@/components/dataroom/uplo
 import type { DataRoomFile } from "@/lib/dataroom-types";
 import { FolderUp } from "lucide-react";
 import { useDataRoom } from "@/contexts/dataroom-context";
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
+import { formatBytes } from "@/lib/dataroom-utils";
 
 interface UploadFilesDialogProps {
   open: boolean;

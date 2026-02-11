@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { TablePagination, PAGE_SIZE } from "@/components/ui/table-pagination";
 import { PasteUploadHandler } from "@/components/dataroom/paste-upload-handler";
+import { DropZoneUploadDialog } from "@/components/dataroom/drop-zone-upload-dialog";
 
 const ROOT_PATH: string[] = [];
 
@@ -71,6 +72,11 @@ export default function DataRoomPage() {
   const [searchValue, setSearchValue] = React.useState("");
   const [fileTypeFilter, setFileTypeFilter] = React.useState("all");
   const [dateFilter, setDateFilter] = React.useState("");
+
+  const [isDragOver, setIsDragOver] = React.useState(false);
+  const [dragCounter, setDragCounter] = React.useState(0);
+  const [droppedFiles, setDroppedFiles] = React.useState<File[]>([]);
+  const [dropDialogOpen, setDropDialogOpen] = React.useState(false);
 
   const hasSearch = searchValue.trim() !== "";
   const flattenedItems = React.useMemo(() => getFlattenedItems(state.rootFolders), [state.rootFolders]);
@@ -257,6 +263,52 @@ export default function DataRoomPage() {
     }
   };
 
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragCounter((prev) => prev + 1);
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDragOver(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragCounter((prev) => {
+      const next = prev - 1;
+      if (next === 0) setIsDragOver(false);
+      return next;
+    });
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    setDragCounter(0);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    setDroppedFiles(files);
+    setDropDialogOpen(true);
+  };
+
+  const handleDropUpload = async (files: File[]) => {
+    try {
+      await uploadFiles(ROOT_PATH, files);
+      toast.success(`Uploaded ${files.length} file${files.length > 1 ? "s" : ""}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    }
+  };
+
   return (
     <SidebarInset>
       <header className="bg-background sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
@@ -281,7 +333,37 @@ export default function DataRoomPage() {
         />
       </div>
 
-      <div className="flex flex-1 flex-col p-6 gap-4">
+      <div 
+        className="flex flex-1 flex-col p-6 gap-4 relative"
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        {/* Drop zone overlay */}
+        {isDragOver && (
+          <div className="absolute inset-0 z-50 bg-primary/10 backdrop-blur-sm border-4 border-dashed border-primary/50 flex items-center justify-center pointer-events-none">
+            <div className="bg-background/95 rounded-lg shadow-lg p-8 text-center">
+              <div className="flex h-16 w-16 mx-auto items-center justify-center rounded-full bg-primary/20 mb-4">
+                <svg
+                  className="h-8 w-8 text-primary"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                  />
+                </svg>
+              </div>
+              <p className="text-lg font-semibold text-primary">Drop files to upload</p>
+              <p className="text-sm text-muted-foreground mt-2">Release to upload to Data Room</p>
+            </div>
+          </div>
+        )}
         {state.error && (
           <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
             {state.error}
@@ -693,6 +775,14 @@ export default function DataRoomPage() {
       <PasteUploadHandler
         onUpload={(files) => uploadFiles(ROOT_PATH, files)}
         enabled={!hasActiveSearchOrFilter}
+      />
+
+      {/* Drop zone upload dialog */}
+      <DropZoneUploadDialog
+        files={droppedFiles}
+        open={dropDialogOpen}
+        onOpenChange={setDropDialogOpen}
+        onUpload={handleDropUpload}
       />
     </SidebarInset>
   );
