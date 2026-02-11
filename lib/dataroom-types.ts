@@ -7,6 +7,8 @@ export type DataRoomFile = {
   type: "file" | "link";
   size?: string;
   modified: string;
+  /** ISO date string for filtering by date uploaded */
+  modifiedIso?: string;
   modifiedBy: string;
   sharing: string;
   mimeType?: string;
@@ -23,6 +25,8 @@ export type DataRoomFolder = {
   icon?: string;
   description?: string;
   modified: string;
+  /** ISO date string for filtering by date */
+  modifiedIso?: string;
   modifiedBy: string;
   sharing: string;
   children: DataRoomItem[];

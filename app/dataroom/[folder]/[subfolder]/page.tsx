@@ -25,6 +25,7 @@ import { MoveToFolderModal } from "@/components/dataroom/move-to-folder-modal";
 import { NewDropdown } from "@/components/dataroom/new-dropdown";
 import { UploadFilesDialog } from "@/components/dataroom/upload-files-dialog";
 import { downloadFile, downloadFolderZip } from "@/lib/dataroom-download";
+import { getFlattenedItems, applySearchAndFilters, applyFiltersOnly, getLocationLabel } from "@/lib/dataroom-search-filter";
 import { useToast } from "@/components/ui/toast";
 import {
   isFolder,
@@ -41,7 +42,6 @@ import {
   LinkIcon as LinkIconLucide,
   FolderIcon,
   FileTextIcon,
-  UsersIcon,
   PlusIcon,
 } from "lucide-react";
 import {
@@ -74,26 +74,58 @@ export default function SubfolderPage() {
   const subfolderSlug = params.subfolder as string;
   const path = React.useMemo(() => [folderSlug, subfolderSlug], [folderSlug, subfolderSlug]);
 
-  const { getChildren, getFolder, addFolder, addFiles, uploadFiles, renameItem, deleteItem, moveItem, setSharing } =
+  const { state, getChildren, getFolder, addFolder, addFiles, uploadFiles, renameItem, deleteItem, moveItem, setSharing } =
     useDataRoom();
   const toast = useToast();
   const parentFolder = getFolder([folderSlug]);
   const folder = getFolder(path);
   const children = getChildren(path);
 
+  const [searchValue, setSearchValue] = React.useState("");
+  const [fileTypeFilter, setFileTypeFilter] = React.useState("all");
+  const [dateFilter, setDateFilter] = React.useState("");
+
+  const hasSearch = searchValue.trim() !== "";
+  const flattenedItems = React.useMemo(() => getFlattenedItems(state.rootFolders), [state.rootFolders]);
+  const filteredGlobalItems = React.useMemo(
+    () =>
+      applySearchAndFilters(flattenedItems, state.rootFolders, {
+        search: searchValue,
+        fileType: fileTypeFilter,
+        date: dateFilter,
+      }),
+    [flattenedItems, state.rootFolders, searchValue, fileTypeFilter, dateFilter]
+  );
+  const folderItemsWithPath = React.useMemo(
+    () => children.map((item) => ({ item, path })),
+    [children, path]
+  );
+  const filteredFolderItems = React.useMemo(
+    () =>
+      applyFiltersOnly(folderItemsWithPath, { fileType: fileTypeFilter, date: dateFilter }),
+    [folderItemsWithPath, fileTypeFilter, dateFilter]
+  );
+  const displayItemsWithPath = React.useMemo(() => {
+    if (hasSearch) return filteredGlobalItems;
+    return filteredFolderItems;
+  }, [hasSearch, filteredGlobalItems, filteredFolderItems]);
+  const showLocationColumn = hasSearch;
+  const hasActiveSearchOrFilter = hasSearch || fileTypeFilter !== "all" || dateFilter !== "";
+
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
   const ignoreNextRowClickRef = React.useRef(false);
   const [renameOpen, setRenameOpen] = React.useState(false);
   const [renameItemId, setRenameItemId] = React.useState<string | null>(null);
+  const [renamePath, setRenamePath] = React.useState<DataRoomPath>(path);
   const [renameName, setRenameName] = React.useState("");
   const [deleteOpen, setDeleteOpen] = React.useState(false);
-  const [deleteItemId, setDeleteItemId] = React.useState<string | null>(null);
-  const [deleteIds, setDeleteIds] = React.useState<Set<string>>(new Set());
+  const [deleteEntries, setDeleteEntries] = React.useState<{ item: DataRoomItem; path: DataRoomPath }[] | null>(null);
   const [deleteName, setDeleteName] = React.useState("");
   const [shareOpen, setShareOpen] = React.useState(false);
   const [shareLink, setShareLink] = React.useState("");
   const [shareAccess, setShareAccess] = React.useState<"view" | "edit">("view");
   const [shareItem, setShareItem] = React.useState<DataRoomItem | null>(null);
+  const [shareItemPath, setShareItemPath] = React.useState<DataRoomPath>(path);
   const [overwriteOpen, setOverwriteOpen] = React.useState(false);
   const [overwriteName, setOverwriteName] = React.useState("");
   const [overwriteResolve, setOverwriteResolve] = React.useState<((ok: boolean) => void) | null>(null);
@@ -101,7 +133,8 @@ export default function SubfolderPage() {
   const [newFolderOpen, setNewFolderOpen] = React.useState(false);
   const [moveOpen, setMoveOpen] = React.useState(false);
   const [moveItemObj, setMoveItemObj] = React.useState<DataRoomItem | null>(null);
-  const [moveItems, setMoveItems] = React.useState<DataRoomItem[] | null>(null);
+  const [moveItemPath, setMoveItemPath] = React.useState<DataRoomPath>(path);
+  const [moveItems, setMoveItems] = React.useState<{ item: DataRoomItem; path: DataRoomPath }[] | null>(null);
   const [moveConfirmOpen, setMoveConfirmOpen] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [moveTargetPath, setMoveTargetPath] = React.useState<DataRoomPath | null>(null);
@@ -116,50 +149,51 @@ export default function SubfolderPage() {
     [children]
   );
 
+  const itemParentPath = (item: DataRoomItem, itemPath: DataRoomPath): DataRoomPath =>
+    isFolder(item) ? itemPath.slice(0, -1) : itemPath;
+
   const handleRename = async (newName: string) => {
     if (!renameItemId) return;
+    const itemPath = renamePath;
     setRenameOpen(false);
-    const id = renameItemId;
     setRenameItemId(null);
     try {
-      await renameItem(path, id, newName);
+      await renameItem(itemPath, renameItemId, newName);
       toast.success("Item renamed");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Rename failed");
     }
   };
 
-  const openRename = (item: DataRoomItem) => {
+  const openRename = (item: DataRoomItem, itemPath: DataRoomPath) => {
     ignoreNextRowClickRef.current = true;
     setRenameItemId(item.id);
+    setRenamePath(itemParentPath(item, itemPath));
     setRenameName(item.name);
     setRenameOpen(true);
   };
 
   const handleDelete = async () => {
-    const idsToDelete = deleteIds.size > 0 ? deleteIds : deleteItemId ? new Set([deleteItemId]) : new Set();
-    if (idsToDelete.size === 0) return;
+    if (!deleteEntries || deleteEntries.length === 0) return;
+    const toDelete = deleteEntries;
     setDeleteOpen(false);
-    setDeleteItemId(null);
-    const ids = Array.from(idsToDelete);
-    setDeleteIds(new Set());
+    setDeleteEntries(null);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      toDelete.forEach(({ item: it }) => next.delete(it.id));
+      return next;
+    });
     try {
-      for (const id of ids) await deleteItem(path, id);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        ids.forEach((id) => next.delete(id));
-        return next;
-      });
-      toast.success(ids.length === 1 ? "Item deleted" : `${ids.length} items deleted`);
+      for (const { item: it, path: p } of toDelete) await deleteItem(itemParentPath(it, p), it.id);
+      toast.success(toDelete.length === 1 ? "Item deleted" : `${toDelete.length} items deleted`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Delete failed");
     }
   };
 
-  const openDelete = (item: DataRoomItem) => {
+  const openDelete = (item: DataRoomItem, itemPath: DataRoomPath) => {
     ignoreNextRowClickRef.current = true;
-    setDeleteItemId(item.id);
-    setDeleteIds(new Set());
+    setDeleteEntries([{ item, path: itemPath }]);
     setDeleteName(item.name);
     setDeleteOpen(true);
   };
@@ -171,14 +205,16 @@ export default function SubfolderPage() {
     return "view";
   };
 
-  const openShare = (item: DataRoomItem) => {
+  const openShare = (item: DataRoomItem, itemPath: DataRoomPath) => {
     ignoreNextRowClickRef.current = true;
+    setShareItemPath(itemParentPath(item, itemPath));
     const base = typeof window !== "undefined" ? window.location.origin : "";
+    const pathPrefix = itemPath.length ? itemPath.join("/") : "";
     if (isFolder(item))
-      setShareLink(`${base}/dataroom/${folderSlug}/${subfolderSlug}/${item.slug}`);
-    else setShareLink(`${base}/dataroom/${folderSlug}/${subfolderSlug}?file=${item.id}`);
+      setShareLink(pathPrefix ? `${base}/dataroom/${pathPrefix}` : `${base}/dataroom/${item.slug}`);
+    else setShareLink(pathPrefix ? `${base}/dataroom/${pathPrefix}?file=${item.id}` : `${base}/dataroom?file=${item.id}`);
     setShareItem(item);
-    setShareAccess(sharingToAccess(item.sharing));
+    setShareAccess(sharingToAccess(item.sharing ?? ""));
     setShareOpen(true);
   };
 
@@ -189,7 +225,7 @@ export default function SubfolderPage() {
       access === "edit"
         ? "Anyone with link (edit)"
         : "Anyone with link (view)";
-    setSharing(path, shareItem.id, label);
+    setSharing(shareItemPath, shareItem.id, label);
   };
 
   const handleDownload = (file: DataRoomFile) => {
@@ -260,37 +296,39 @@ export default function SubfolderPage() {
     }
   };
 
-  const openMove = (item: DataRoomItem) => {
+  const openMove = (item: DataRoomItem, itemPath: DataRoomPath) => {
     ignoreNextRowClickRef.current = true;
     setMoveItemObj(item);
+    setMoveItemPath(itemParentPath(item, itemPath));
     setMoveItems(null);
     setMoveOpen(true);
   };
 
-  const selectedItems = React.useMemo(
-    () => children.filter((c) => selectedIds.has(c.id)),
-    [children, selectedIds]
+  const selectedItemsWithPath = React.useMemo(
+    () => displayItemsWithPath.filter(({ item }) => selectedIds.has(item.id)),
+    [displayItemsWithPath, selectedIds]
   );
-  const allSelected = children.length > 0 && selectedIds.size === children.length;
+  const selectedItems = React.useMemo(() => selectedItemsWithPath.map(({ item }) => item), [selectedItemsWithPath]);
+  const allSelected = displayItemsWithPath.length > 0 && selectedIds.size === displayItemsWithPath.length;
   const someSelected = selectedIds.size > 0;
 
-  const toggleSelectAll = () => {
+  const toggleSelectAll = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (allSelected) setSelectedIds(new Set());
-    else setSelectedIds(new Set(children.map((c) => c.id)));
+    else setSelectedIds(new Set(displayItemsWithPath.map(({ item }) => item.id)));
   };
   const clearSelection = () => setSelectedIds(new Set());
 
   const openBulkMove = () => {
-    if (selectedItems.length === 0) return;
+    if (selectedItemsWithPath.length === 0) return;
     setMoveItemObj(null);
-    setMoveItems(selectedItems);
+    setMoveItems(selectedItemsWithPath);
     setMoveOpen(true);
   };
   const openBulkDelete = () => {
-    if (selectedItems.length === 0) return;
-    setDeleteItemId(null);
-    setDeleteIds(new Set(selectedItems.map((i) => i.id)));
-    setDeleteName(selectedItems.length === 1 ? selectedItems[0].name : `${selectedItems.length} items`);
+    if (selectedItemsWithPath.length === 0) return;
+    setDeleteEntries(selectedItemsWithPath);
+    setDeleteName(selectedItemsWithPath.length === 1 ? selectedItemsWithPath[0].item.name : `${selectedItemsWithPath.length} items`);
     setDeleteOpen(true);
   };
 
@@ -304,19 +342,34 @@ export default function SubfolderPage() {
 
   const handleMoveConfirm = () => {
     if (moveTargetPath === null) return;
-    const itemsToMove = moveItems && moveItems.length > 0 ? moveItems : moveItemObj ? [moveItemObj] : [];
-    if (itemsToMove.length === 0) return;
-    for (const item of itemsToMove) moveItem(path, item.id, moveTargetPath);
+    if (moveItems && moveItems.length > 0) {
+      for (const { item: it, path: srcPath } of moveItems) moveItem(itemParentPath(it, srcPath), it.id, moveTargetPath);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        moveItems.forEach(({ item: it }) => next.delete(it.id));
+        return next;
+      });
+    } else if (moveItemObj) {
+      moveItem(moveItemPath, moveItemObj.id, moveTargetPath);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(moveItemObj.id);
+        return next;
+      });
+    }
     setMoveConfirmOpen(false);
     setMoveTargetPath(null);
     setMoveTargetLabel("");
     setMoveItemObj(null);
     setMoveItems(null);
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      itemsToMove.forEach((i) => next.delete(i.id));
-      return next;
-    });
+  };
+
+  const navigateTo = (item: DataRoomItem, itemPath: DataRoomPath) => {
+    if (isFolder(item)) router.push("/dataroom/" + itemPath.join("/"));
+    else if (isFile(item)) {
+      setPreviewFile(item);
+      setPreviewOpen(true);
+    }
   };
 
   if (!folder) {
@@ -328,15 +381,6 @@ export default function SubfolderPage() {
       </SidebarInset>
     );
   }
-
-  const navigateTo = (item: DataRoomItem) => {
-    if (isFolder(item)) {
-      router.push(`/dataroom/${folderSlug}/${subfolderSlug}/${item.slug}`);
-    } else if (isFile(item)) {
-      setPreviewFile(item);
-      setPreviewOpen(true);
-    }
-  };
 
   const openPreview = (file: DataRoomFile) => {
     ignoreNextRowClickRef.current = true;
@@ -386,6 +430,13 @@ export default function SubfolderPage() {
               viewMode={viewMode}
               onViewModeChange={setViewMode}
               onDownload={handleFolderDownload}
+              searchPlaceholder="Search files and folders..."
+              searchValue={searchValue}
+              onSearch={setSearchValue}
+              fileTypeValue={fileTypeFilter}
+              onFileTypeChange={setFileTypeFilter}
+              dateValue={dateFilter}
+              onDateChange={setDateFilter}
             />
           </div>
         </div>
@@ -430,15 +481,15 @@ export default function SubfolderPage() {
                       />
                     </TableHead>
                     <TableHead className="w-[40%]">Name</TableHead>
+                    {showLocationColumn && <TableHead className="w-[140px] max-w-[140px]">Location</TableHead>}
                     <TableHead>Modified</TableHead>
                     <TableHead>Modified By</TableHead>
                     <TableHead>File size</TableHead>
-                    <TableHead>Sharing</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {children.map((item) => (
+                  {displayItemsWithPath.map(({ item, path: rowPath }) => (
                     <TableRow
                       key={item.id}
                       className={`cursor-pointer hover:bg-primary/5 group ${selectedIds.has(item.id) ? "bg-primary/5" : ""}`}
@@ -447,7 +498,7 @@ export default function SubfolderPage() {
                           ignoreNextRowClickRef.current = false;
                           return;
                         }
-                        navigateTo(item);
+                        navigateTo(item, rowPath);
                       }}
                     >
                       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -470,16 +521,15 @@ export default function SubfolderPage() {
                           <span className="group-hover:text-primary transition-colors">{item.name}</span>
                         </div>
                       </TableCell>
+                      {showLocationColumn && (
+                        <TableCell className="text-muted-foreground text-sm max-w-[140px] truncate" title={getLocationLabel(rowPath, state.rootFolders)}>
+                          {getLocationLabel(rowPath, state.rootFolders)}
+                        </TableCell>
+                      )}
                       <TableCell className="text-muted-foreground text-sm">{item.modified}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{item.modifiedBy}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {isFile(item) ? item.size : isFolder(item) ? `${item.children.length} items` : ""}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                          <UsersIcon className="h-4 w-4" />
-                          {item.sharing}
-                        </div>
                       </TableCell>
                       <TableCell>
                         <DropdownMenu>
@@ -495,21 +545,21 @@ export default function SubfolderPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openRename(item); }}
+                              onSelect={(e) => { e.preventDefault(); openRename(item, rowPath); }}
                             >
                               <PencilIcon className="h-4 w-4 mr-2" />
-                              Rename
+                              {isFile(item) && item.type === "link" ? "Edit Link" : "Rename"}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openShare(item); }}
+                              onSelect={(e) => { e.preventDefault(); openShare(item, rowPath); }}
                             >
                               <LinkIconLucide className="h-4 w-4 mr-2" />
                               Copy Link
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openMove(item); }}
+                              onSelect={(e) => { e.preventDefault(); openMove(item, rowPath); }}
                             >
                               <FolderIcon className="h-4 w-4 mr-2" />
                               Move to...
@@ -532,7 +582,7 @@ export default function SubfolderPage() {
                             )}
                             <DropdownMenuItem
                               className="focus:bg-destructive/10 focus:text-destructive"
-                              onSelect={(e) => { e.preventDefault(); openDelete(item); }}
+                              onSelect={(e) => { e.preventDefault(); openDelete(item, rowPath); }}
                             >
                               <TrashIcon className="h-4 w-4 mr-2" />
                               Delete
@@ -547,7 +597,7 @@ export default function SubfolderPage() {
             </Card>
           ) : (
             <div>
-              {children.length > 0 && (
+              {displayItemsWithPath.length > 0 && (
                 <div className="flex items-center gap-2 mb-3">
                   <Button
                     variant="ghost"
@@ -560,7 +610,7 @@ export default function SubfolderPage() {
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {children.map((item) => (
+              {displayItemsWithPath.map(({ item, path: rowPath }) => (
                 <Card
                   key={item.id}
                   className={`group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full ${selectedIds.has(item.id) ? "ring-2 ring-primary" : ""}`}
@@ -569,7 +619,7 @@ export default function SubfolderPage() {
                       ignoreNextRowClickRef.current = false;
                       return;
                     }
-                    navigateTo(item);
+                    navigateTo(item, rowPath);
                   }}
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -603,21 +653,21 @@ export default function SubfolderPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
                             className="focus:bg-primary/10 focus:text-primary"
-                            onSelect={(e) => { e.preventDefault(); openRename(item); }}
+                            onSelect={(e) => { e.preventDefault(); openRename(item, rowPath); }}
                           >
                             <PencilIcon className="h-4 w-4 mr-2" />
                             Rename
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="focus:bg-primary/10 focus:text-primary"
-                            onSelect={(e) => { e.preventDefault(); openShare(item); }}
+                            onSelect={(e) => { e.preventDefault(); openShare(item, rowPath); }}
                           >
                             <LinkIconLucide className="h-4 w-4 mr-2" />
                             Copy Link
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="focus:bg-primary/10 focus:text-primary"
-                            onSelect={(e) => { e.preventDefault(); openMove(item); }}
+                            onSelect={(e) => { e.preventDefault(); openMove(item, rowPath); }}
                           >
                             <FolderIcon className="h-4 w-4 mr-2" />
                             Move to...
@@ -640,7 +690,7 @@ export default function SubfolderPage() {
                           )}
                           <DropdownMenuItem
                             className="focus:bg-destructive/10 focus:text-destructive"
-                            onSelect={(e) => { e.preventDefault(); openDelete(item); }}
+                            onSelect={(e) => { e.preventDefault(); openDelete(item, rowPath); }}
                           >
                             <TrashIcon className="h-4 w-4 mr-2" />
                             Delete
@@ -652,6 +702,11 @@ export default function SubfolderPage() {
                       <h3 className="font-semibold text-base mb-2 group-hover:text-primary transition-colors">
                         {item.name}
                       </h3>
+                      {showLocationColumn && (
+                        <p className="text-xs text-muted-foreground truncate">
+                          {getLocationLabel(rowPath, state.rootFolders)}
+                        </p>
+                      )}
                       {isFile(item) && item.description && (
                         <p className="text-xs text-muted-foreground">{item.description}</p>
                       )}
@@ -659,6 +714,7 @@ export default function SubfolderPage() {
                   </CardContent>
                 </Card>
               ))}
+              {!hasActiveSearchOrFilter && (
               <Card
                 className="group hover:shadow-lg hover:shadow-primary/20 hover:border-primary transition-all cursor-pointer relative overflow-hidden border-2 border-dashed border-primary/40 bg-primary/5"
                 onClick={() => setNewFolderOpen(true)}
@@ -675,6 +731,7 @@ export default function SubfolderPage() {
                   </div>
                 </CardContent>
               </Card>
+              )}
             </div>
             </div>
           )}
@@ -741,7 +798,7 @@ export default function SubfolderPage() {
           itemName={moveItemObj?.name}
           sourcePath={path}
           movingItem={moveItemObj ?? undefined}
-          movingItems={moveItems ?? undefined}
+          movingItems={moveItems ? moveItems.map(({ item }) => item) : undefined}
           onSelect={handleMoveSelect}
         />
       )}
@@ -756,7 +813,7 @@ export default function SubfolderPage() {
           (moveItemObj || (moveItems && moveItems.length > 0))
             ? moveItems && moveItems.length > 1
               ? `Move ${moveItems.length} items to ${moveTargetLabel}?`
-              : `Move "${(moveItemObj ?? moveItems?.[0])?.name}" to ${moveTargetLabel}?`
+              : `Move "${(moveItemObj ?? moveItems?.[0]?.item)?.name}" to ${moveTargetLabel}?`
             : ""
         }
         confirmLabel="Move"

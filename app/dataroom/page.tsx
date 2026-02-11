@@ -28,8 +28,10 @@ import { ConfirmDialog } from "@/components/dataroom/confirm-dialog";
 import { ShareLinkModal } from "@/components/dataroom/share-link-modal";
 import { InputDialog } from "@/components/dataroom/input-dialog";
 import { MoveToFolderModal } from "@/components/dataroom/move-to-folder-modal";
-import { isFolder, type DataRoomPath, type DataRoomFolder, type DataRoomItem } from "@/lib/dataroom-types";
-import { downloadFolderZip } from "@/lib/dataroom-download";
+import { isFolder, isFile, type DataRoomPath, type DataRoomFolder, type DataRoomItem, type DataRoomFile } from "@/lib/dataroom-types";
+import { downloadFolderZip, downloadFile } from "@/lib/dataroom-download";
+import { getFlattenedItems, applySearchAndFilters, applyFiltersOnly, getLocationLabel } from "@/lib/dataroom-search-filter";
+import { FilePreviewModal } from "@/components/dataroom/file-preview-modal";
 import { useToast } from "@/components/ui/toast";
 import {
   PlusIcon,
@@ -38,7 +40,8 @@ import {
   TrashIcon,
   LinkIcon,
   FolderIcon,
-  UsersIcon,
+  FileTextIcon,
+  LinkIcon as LinkIconLucide,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -49,6 +52,13 @@ import {
 
 const ROOT_PATH: string[] = [];
 
+function getItemIcon(item: DataRoomItem, size: "sm" | "lg" = "lg") {
+  const sizeClass = size === "sm" ? "h-5 w-5" : "h-10 w-10";
+  if (isFolder(item)) return <FolderIcon className={`${sizeClass} text-primary`} />;
+  if (item.type === "link") return <LinkIconLucide className={`${sizeClass} text-blue-500`} />;
+  return <FileTextIcon className={`${sizeClass} text-muted-foreground`} />;
+}
+
 export default function DataRoomPage() {
   const router = useRouter();
   const { state, getChildren, getFolder, addFolder, renameItem, deleteItem, moveItem, setSharing } = useDataRoom();
@@ -56,24 +66,62 @@ export default function DataRoomPage() {
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
   const ignoreNextRowClickRef = React.useRef(false);
 
+  const [searchValue, setSearchValue] = React.useState("");
+  const [fileTypeFilter, setFileTypeFilter] = React.useState("all");
+  const [dateFilter, setDateFilter] = React.useState("");
+
+  const hasSearch = searchValue.trim() !== "";
+  const flattenedItems = React.useMemo(() => getFlattenedItems(state.rootFolders), [state.rootFolders]);
+  const filteredGlobalItems = React.useMemo(
+    () =>
+      applySearchAndFilters(flattenedItems, state.rootFolders, {
+        search: searchValue,
+        fileType: fileTypeFilter,
+        date: dateFilter,
+      }),
+    [flattenedItems, state.rootFolders, searchValue, fileTypeFilter, dateFilter]
+  );
+  const rootItemsWithPath = React.useMemo(
+    () => state.rootFolders.map((f) => ({ item: f as DataRoomItem, path: [f.slug] as DataRoomPath })),
+    [state.rootFolders]
+  );
+  const filteredRootItems = React.useMemo(
+    () =>
+      applyFiltersOnly(rootItemsWithPath, { fileType: fileTypeFilter, date: dateFilter }),
+    [rootItemsWithPath, fileTypeFilter, dateFilter]
+  );
+  const displayItemsWithPath = React.useMemo(() => {
+    if (hasSearch) return filteredGlobalItems;
+    return filteredRootItems;
+  }, [hasSearch, filteredGlobalItems, filteredRootItems]);
+  const showLocationColumn = hasSearch;
+  const hasActiveSearchOrFilter = hasSearch || fileTypeFilter !== "all" || dateFilter !== "";
+
   const [newFolderOpen, setNewFolderOpen] = React.useState(false);
   const [renameOpen, setRenameOpen] = React.useState(false);
   const [renameItemId, setRenameItemId] = React.useState<string | null>(null);
+  const [renamePath, setRenamePath] = React.useState<DataRoomPath>(ROOT_PATH);
   const [renameName, setRenameName] = React.useState("");
   const [deleteOpen, setDeleteOpen] = React.useState(false);
-  const [deleteItemId, setDeleteItemId] = React.useState<string | null>(null);
+  const [deleteEntries, setDeleteEntries] = React.useState<{ item: DataRoomItem; path: DataRoomPath }[] | null>(null);
   const [deleteName, setDeleteName] = React.useState("");
   const [shareOpen, setShareOpen] = React.useState(false);
   const [shareLink, setShareLink] = React.useState("");
   const [shareAccess, setShareAccess] = React.useState<"view" | "edit">("view");
   const [shareItem, setShareItem] = React.useState<DataRoomItem | null>(null);
+  const [shareItemPath, setShareItemPath] = React.useState<DataRoomPath>(ROOT_PATH);
   const [moveOpen, setMoveOpen] = React.useState(false);
   const [moveItemObj, setMoveItemObj] = React.useState<DataRoomItem | null>(null);
+  const [moveItemPath, setMoveItemPath] = React.useState<DataRoomPath>(ROOT_PATH);
   const [moveConfirmOpen, setMoveConfirmOpen] = React.useState(false);
   const [moveTargetPath, setMoveTargetPath] = React.useState<DataRoomPath | null>(null);
   const [moveTargetLabel, setMoveTargetLabel] = React.useState("");
+  const [previewFile, setPreviewFile] = React.useState<DataRoomFile | null>(null);
+  const [previewOpen, setPreviewOpen] = React.useState(false);
 
   const folders = getChildren(ROOT_PATH).filter((c): c is DataRoomFolder => isFolder(c));
+  const itemParentPath = (item: DataRoomItem, itemPath: DataRoomPath): DataRoomPath =>
+    isFolder(item) ? itemPath.slice(0, -1) : itemPath;
 
   const handleNewFolder = async (name: string) => {
     setNewFolderOpen(false);
@@ -85,41 +133,42 @@ export default function DataRoomPage() {
     }
   };
 
-  const openRename = (item: DataRoomItem) => {
+  const openRename = (item: DataRoomItem, itemPath: DataRoomPath) => {
     ignoreNextRowClickRef.current = true;
     setRenameItemId(item.id);
+    setRenamePath(itemParentPath(item, itemPath));
     setRenameName(item.name);
     setRenameOpen(true);
   };
 
   const handleRename = async (newName: string) => {
     if (!renameItemId) return;
+    const itemPath = renamePath;
     setRenameOpen(false);
-    const id = renameItemId;
     setRenameItemId(null);
     try {
-      await renameItem(ROOT_PATH, id, newName);
-      toast.success("Folder renamed");
+      await renameItem(itemPath, renameItemId, newName);
+      toast.success("Item renamed");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Rename failed");
     }
   };
 
-  const openDelete = (item: DataRoomItem) => {
+  const openDelete = (item: DataRoomItem, itemPath: DataRoomPath) => {
     ignoreNextRowClickRef.current = true;
-    setDeleteItemId(item.id);
+    setDeleteEntries([{ item, path: itemPath }]);
     setDeleteName(item.name);
     setDeleteOpen(true);
   };
 
   const handleDelete = async () => {
-    if (!deleteItemId) return;
+    if (!deleteEntries || deleteEntries.length === 0) return;
+    const toDelete = deleteEntries;
     setDeleteOpen(false);
-    const id = deleteItemId;
-    setDeleteItemId(null);
+    setDeleteEntries(null);
     try {
-      await deleteItem(ROOT_PATH, id);
-      toast.success("Folder deleted");
+      for (const { item: it, path: p } of toDelete) await deleteItem(itemParentPath(it, p), it.id);
+      toast.success(toDelete.length === 1 ? "Item deleted" : `${toDelete.length} items deleted`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Delete failed");
     }
@@ -132,12 +181,16 @@ export default function DataRoomPage() {
     return "view";
   };
 
-  const openShare = (folder: DataRoomFolder) => {
+  const openShare = (item: DataRoomItem, itemPath: DataRoomPath) => {
     ignoreNextRowClickRef.current = true;
+    setShareItemPath(itemParentPath(item, itemPath));
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    setShareLink(`${origin}/dataroom/${folder.slug}`);
-    setShareItem(folder);
-    setShareAccess(sharingToAccess(folder.sharing ?? ""));
+    const pathPrefix = itemPath.length ? itemPath.join("/") : "";
+    if (isFolder(item))
+      setShareLink(pathPrefix ? `${origin}/dataroom/${pathPrefix}` : `${origin}/dataroom/${item.slug}`);
+    else setShareLink(pathPrefix ? `${origin}/dataroom/${pathPrefix}?file=${item.id}` : `${origin}/dataroom?file=${item.id}`);
+    setShareItem(item);
+    setShareAccess(sharingToAccess(item.sharing ?? ""));
     setShareOpen(true);
   };
 
@@ -151,7 +204,7 @@ export default function DataRoomPage() {
       access === "edit"
         ? "Anyone with link (edit)"
         : "Anyone with link (view)";
-    setSharing(ROOT_PATH, shareItem.id, label);
+    setSharing(shareItemPath, shareItem.id, label);
   };
 
   const handleRootDownload = () => {
@@ -159,9 +212,10 @@ export default function DataRoomPage() {
     toast.success('Downloading "Data Room" as ZIP');
   };
 
-  const openMove = (item: DataRoomItem) => {
+  const openMove = (item: DataRoomItem, itemPath: DataRoomPath) => {
     ignoreNextRowClickRef.current = true;
     setMoveItemObj(item);
+    setMoveItemPath(itemParentPath(item, itemPath));
     setMoveOpen(true);
   };
 
@@ -175,11 +229,19 @@ export default function DataRoomPage() {
 
   const handleMoveConfirm = () => {
     if (!moveItemObj || moveTargetPath === null) return;
-    moveItem(ROOT_PATH, moveItemObj.id, moveTargetPath);
+    moveItem(moveItemPath, moveItemObj.id, moveTargetPath);
     setMoveConfirmOpen(false);
     setMoveTargetPath(null);
     setMoveTargetLabel("");
     setMoveItemObj(null);
+  };
+
+  const navigateTo = (item: DataRoomItem, itemPath: DataRoomPath) => {
+    if (isFolder(item)) router.push("/dataroom/" + itemPath.join("/"));
+    else if (isFile(item)) {
+      setPreviewFile(item);
+      setPreviewOpen(true);
+    }
   };
 
   return (
@@ -219,11 +281,123 @@ export default function DataRoomPage() {
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           searchPlaceholder="Search file or folder"
+          searchValue={searchValue}
+          onSearch={setSearchValue}
+          fileTypeValue={fileTypeFilter}
+          onFileTypeChange={setFileTypeFilter}
+          dateValue={dateFilter}
+          onDateChange={setDateFilter}
           onDownload={handleRootDownload}
         />
 
         <div className="flex-1">
-          {viewMode === "grid" ? (
+          {hasActiveSearchOrFilter ? (
+            <Card className="border-primary/20">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-[40%]">Name</TableHead>
+                    {showLocationColumn && <TableHead className="w-[140px] max-w-[140px]">Location</TableHead>}
+                    <TableHead>Modified</TableHead>
+                    <TableHead>Modified By</TableHead>
+                    <TableHead>File size</TableHead>
+                    <TableHead className="w-12"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {displayItemsWithPath.map(({ item, path: rowPath }) => (
+                    <TableRow
+                      key={item.id}
+                      className="cursor-pointer hover:bg-primary/5 group"
+                      onClick={() => {
+                        if (ignoreNextRowClickRef.current) {
+                          ignoreNextRowClickRef.current = false;
+                          return;
+                        }
+                        navigateTo(item, rowPath);
+                      }}
+                    >
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-3">
+                          {getItemIcon(item, "sm")}
+                          <span className="group-hover:text-primary transition-colors">{item.name}</span>
+                        </div>
+                      </TableCell>
+                      {showLocationColumn && (
+                        <TableCell className="text-muted-foreground text-sm max-w-[140px] truncate" title={getLocationLabel(rowPath, state.rootFolders)}>
+                          {getLocationLabel(rowPath, state.rootFolders)}
+                        </TableCell>
+                      )}
+                      <TableCell className="text-muted-foreground text-sm">{item.modified}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{item.modifiedBy}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {isFile(item) ? item.size : isFolder(item) ? `${item.children.length} items` : ""}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
+                            >
+                              <MoreVerticalIcon className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              className="focus:bg-primary/10 focus:text-primary"
+                              onSelect={(e) => { e.preventDefault(); openRename(item, rowPath); }}
+                            >
+                              <PencilIcon className="h-4 w-4 mr-2" />
+                              Rename
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="focus:bg-primary/10 focus:text-primary"
+                              onSelect={(e) => { e.preventDefault(); openShare(item, rowPath); }}
+                            >
+                              <LinkIcon className="h-4 w-4 mr-2" />
+                              Copy Link
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="focus:bg-primary/10 focus:text-primary"
+                              onSelect={(e) => { e.preventDefault(); openMove(item, rowPath); }}
+                            >
+                              <FolderIcon className="h-4 w-4 mr-2" />
+                              Move to...
+                            </DropdownMenuItem>
+                            {isFile(item) && (
+                              <>
+                                <DropdownMenuItem
+                                  className="focus:bg-primary/10 focus:text-primary"
+                                  onSelect={(e) => { e.preventDefault(); setPreviewFile(item); setPreviewOpen(true); }}
+                                >
+                                  Preview
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  className="focus:bg-primary/10 focus:text-primary"
+                                  onSelect={(e) => { e.preventDefault(); downloadFile(item); }}
+                                >
+                                  Download
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                            <DropdownMenuItem
+                              className="focus:bg-destructive/10 focus:text-destructive"
+                              onSelect={(e) => { e.preventDefault(); openDelete(item, rowPath); }}
+                            >
+                              <TrashIcon className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
+          ) : viewMode === "grid" ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
               {folders.map((folder) => (
                 <Card
@@ -251,31 +425,31 @@ export default function DataRoomPage() {
                             <MoreVerticalIcon className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            className="focus:bg-primary/10 focus:text-primary"
-                            onSelect={(e) => { e.preventDefault(); openRename(folder); }}
-                          >
-                            <PencilIcon className="h-4 w-4 mr-2" />
-                            Rename
-                          </DropdownMenuItem>
+                          <DropdownMenuContent align="end">
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openShare(folder); }}
+                              onSelect={(e) => { e.preventDefault(); openRename(folder, [folder.slug]); }}
+                            >
+                              <PencilIcon className="h-4 w-4 mr-2" />
+                              Rename
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="focus:bg-primary/10 focus:text-primary"
+                              onSelect={(e) => { e.preventDefault(); openShare(folder, [folder.slug]); }}
                             >
                               <LinkIcon className="h-4 w-4 mr-2" />
                               Copy Link
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openMove(folder); }}
+                              onSelect={(e) => { e.preventDefault(); openMove(folder, [folder.slug]); }}
                             >
                               <FolderIcon className="h-4 w-4 mr-2" />
                               Move to...
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="focus:bg-destructive/10 focus:text-destructive"
-                              onSelect={(e) => { e.preventDefault(); openDelete(folder); }}
+                              onSelect={(e) => { e.preventDefault(); openDelete(folder, [folder.slug]); }}
                             >
                               <TrashIcon className="h-4 w-4 mr-2" />
                               Delete
@@ -321,7 +495,6 @@ export default function DataRoomPage() {
                     <TableHead>Modified</TableHead>
                     <TableHead>Modified By</TableHead>
                     <TableHead>File size</TableHead>
-                    <TableHead>Sharing</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -356,12 +529,6 @@ export default function DataRoomPage() {
                         {itemsCount(folder)}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                          <UsersIcon className="h-4 w-4" />
-                          {folder.sharing}
-                        </div>
-                      </TableCell>
-                      <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
                             <Button
@@ -375,28 +542,28 @@ export default function DataRoomPage() {
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openRename(folder); }}
+                              onSelect={(e) => { e.preventDefault(); openRename(folder, [folder.slug]); }}
                             >
                               <PencilIcon className="h-4 w-4 mr-2" />
                               Rename
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openShare(folder); }}
+                              onSelect={(e) => { e.preventDefault(); openShare(folder, [folder.slug]); }}
                             >
                               <LinkIcon className="h-4 w-4 mr-2" />
                               Copy Link
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openMove(folder); }}
+                              onSelect={(e) => { e.preventDefault(); openMove(folder, [folder.slug]); }}
                             >
                               <FolderIcon className="h-4 w-4 mr-2" />
                               Move to...
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="focus:bg-destructive/10 focus:text-destructive"
-                              onSelect={(e) => { e.preventDefault(); openDelete(folder); }}
+                              onSelect={(e) => { e.preventDefault(); openDelete(folder, [folder.slug]); }}
                             >
                               <TrashIcon className="h-4 w-4 mr-2" />
                               Delete
@@ -412,6 +579,8 @@ export default function DataRoomPage() {
           )}
         </div>
       </div>
+
+      <FilePreviewModal file={previewFile} open={previewOpen} onOpenChange={setPreviewOpen} />
 
       <InputDialog
         open={newFolderOpen}

@@ -41,7 +41,6 @@ import {
   LinkIcon as LinkIconLucide,
   FolderIcon,
   FileTextIcon,
-  UsersIcon,
   PlusIcon,
 } from "lucide-react";
 import {
@@ -144,11 +143,11 @@ export default function IndustryChildPage() {
   };
 
   const handleDelete = async () => {
-    const idsToDelete = deleteIds.size > 0 ? deleteIds : deleteItemId ? new Set([deleteItemId]) : new Set();
+    const idsToDelete = deleteIds.size > 0 ? deleteIds : deleteItemId ? new Set([deleteItemId]) : new Set<string>();
     if (idsToDelete.size === 0) return;
     setDeleteOpen(false);
     setDeleteItemId(null);
-    const ids = Array.from(idsToDelete);
+    const ids: string[] = Array.from(idsToDelete);
     setDeleteIds(new Set());
     try {
       for (const id of ids) await deleteItem(path, id);
@@ -456,7 +455,6 @@ export default function IndustryChildPage() {
                     <TableHead>Modified</TableHead>
                     <TableHead>Modified By</TableHead>
                     <TableHead>File size</TableHead>
-                    <TableHead>Sharing</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -497,12 +495,6 @@ export default function IndustryChildPage() {
                       <TableCell className="text-muted-foreground text-sm">{item.modifiedBy}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {isFile(item) ? item.size : isFolder(item) ? `${item.children.length} items` : ""}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                          <UsersIcon className="h-4 w-4" />
-                          {item.sharing}
-                        </div>
                       </TableCell>
                       <TableCell>
                         <DropdownMenu>
