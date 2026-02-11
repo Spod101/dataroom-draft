@@ -412,6 +412,15 @@ export async function uploadFileToFolder(folderId: string, file: File): Promise<
 /** Rename a folder; updates slug to keep it unique among siblings. */
 export async function renameFolder(folderId: string, newName: string, siblingSlugs: string[]): Promise<void> {
   await assertCanEditFolder(folderId, "rename folders");
+  
+  // Get old name before renaming
+  const { data: oldData } = await supabase
+    .from("folders")
+    .select("name")
+    .eq("id", folderId)
+    .maybeSingle();
+  const oldName = oldData ? (oldData as { name: string }).name : undefined;
+  
   const slug = uniqueSlug(slugFromName(newName), siblingSlugs);
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
@@ -422,7 +431,7 @@ export async function renameFolder(folderId: string, newName: string, siblingSlu
   await logAuditEvent("folder.rename", "folder", {
     targetId: folderId,
     folderId,
-    details: { newName },
+    details: { oldName, newName },
   });
 }
 
@@ -435,6 +444,7 @@ export async function deleteFolder(folderId: string): Promise<void> {
     .update({
       is_deleted: true,
       deleted_at: new Date().toISOString(),
+      deleted_by: modifiedBy,
       last_modified: new Date().toISOString(),
       modified_by: modifiedBy,
     })
@@ -449,6 +459,15 @@ export async function deleteFolder(folderId: string): Promise<void> {
 /** Rename a file. */
 export async function renameFile(fileId: string, newName: string): Promise<void> {
   await assertCanEditFile(fileId, "rename");
+  
+  // Get old name before renaming
+  const { data: oldData } = await supabase
+    .from("files")
+    .select("name")
+    .eq("id", fileId)
+    .maybeSingle();
+  const oldName = oldData ? (oldData as { name: string }).name : undefined;
+  
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("files")
@@ -463,7 +482,7 @@ export async function renameFile(fileId: string, newName: string): Promise<void>
   await logAuditEvent("file.rename", "file", {
     targetId: fileId,
     fileId,
-    details: { newName },
+    details: { oldName, newName },
   });
 }
 
@@ -476,6 +495,7 @@ export async function deleteFile(fileId: string): Promise<void> {
     .update({
       is_deleted: true,
       deleted_at: new Date().toISOString(),
+      deleted_by: modifiedBy,
       last_modified: new Date().toISOString(),
       modified_by: modifiedBy,
     })
@@ -494,6 +514,8 @@ type TrashFolderRow = {
   parent_folder_id: string | null;
   name: string;
   deleted_at: string | null;
+  deleted_by: string | null;
+  deleted_by_name?: string;
 };
 
 type TrashFileRow = {
@@ -501,6 +523,8 @@ type TrashFileRow = {
   folder_id: string;
   name: string;
   deleted_at: string | null;
+  deleted_by: string | null;
+  deleted_by_name?: string;
 };
 
 export type TrashSummary = {
@@ -513,12 +537,12 @@ export async function listTrash(): Promise<TrashSummary> {
   const [foldersRes, filesRes] = await Promise.all([
     supabase
       .from("folders")
-      .select("id, parent_folder_id, name, deleted_at")
+      .select("id, parent_folder_id, name, deleted_at, deleted_by")
       .eq("is_deleted", true)
       .order("deleted_at", { ascending: false }),
     supabase
       .from("files")
-      .select("id, folder_id, name, deleted_at")
+      .select("id, folder_id, name, deleted_at, deleted_by")
       .eq("is_deleted", true)
       .order("deleted_at", { ascending: false }),
   ]);
@@ -526,9 +550,34 @@ export async function listTrash(): Promise<TrashSummary> {
   if (foldersRes.error) throw new Error(foldersRes.error.message);
   if (filesRes.error) throw new Error(filesRes.error.message);
 
+  const folders = (foldersRes.data ?? []) as TrashFolderRow[];
+  const files = (filesRes.data ?? []) as TrashFileRow[];
+
+  // Get all unique user IDs who deleted items
+  const userIds = Array.from(
+    new Set([
+      ...folders.map((f) => f.deleted_by).filter(Boolean),
+      ...files.map((f) => f.deleted_by).filter(Boolean),
+    ] as string[])
+  );
+
+  // Fetch user names
+  const userDisplayNames = await fetchUserDisplayNames(userIds);
+
+  // Attach user names to folders and files
+  const foldersWithNames = folders.map((folder) => ({
+    ...folder,
+    deleted_by_name: folder.deleted_by ? userDisplayNames.get(folder.deleted_by) : undefined,
+  }));
+
+  const filesWithNames = files.map((file) => ({
+    ...file,
+    deleted_by_name: file.deleted_by ? userDisplayNames.get(file.deleted_by) : undefined,
+  }));
+
   return {
-    folders: (foldersRes.data ?? []) as TrashFolderRow[],
-    files: (filesRes.data ?? []) as TrashFileRow[],
+    folders: foldersWithNames,
+    files: filesWithNames,
   };
 }
 

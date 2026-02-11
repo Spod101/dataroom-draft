@@ -25,14 +25,22 @@ import {
 import { Trash2Icon, RotateCwIcon } from "lucide-react";
 import { listTrash, restoreFolder, restoreFile, hardDeleteFolder, hardDeleteFile, type TrashSummary } from "@/lib/dataroom-supabase";
 import { useToast } from "@/components/ui/toast";
+import { useAuth } from "@/contexts/auth-context";
+import { FilterSelect } from "@/components/dataroom/filter-select";
 
 export default function TrashPage() {
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === "admin";
+  const currentUserId = profile?.id;
+
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [trash, setTrash] = React.useState<TrashSummary | null>(null);
   const [selectedFolderIds, setSelectedFolderIds] = React.useState<Set<string>>(new Set());
   const [selectedFileIds, setSelectedFileIds] = React.useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
+  // Admins can filter, regular users always see only their deletions
+  const [filterBy, setFilterBy] = React.useState<"all" | "mine">(isAdmin ? "all" : "mine");
   const { success, error: toastError } = useToast();
 
   const load = React.useCallback(async () => {
@@ -92,8 +100,20 @@ export default function TrashPage() {
     }
   };
 
-  const folders = trash?.folders ?? [];
-  const files = trash?.files ?? [];
+  // Filter trash items based on user role and selection
+  const allFolders = trash?.folders ?? [];
+  const allFiles = trash?.files ?? [];
+  
+  // Regular users ALWAYS see only their deletions (no option to see all)
+  // Admins can toggle between "all" and "mine"
+  const folders = !isAdmin || filterBy === "mine"
+    ? allFolders.filter((f) => f.deleted_by === currentUserId)
+    : allFolders;
+  
+  const files = !isAdmin || filterBy === "mine"
+    ? allFiles.filter((f) => f.deleted_by === currentUserId)
+    : allFiles;
+
   const hasItems = folders.length > 0 || files.length > 0;
   const totalItems = folders.length + files.length;
   const selectedCount = selectedFolderIds.size + selectedFileIds.size;
@@ -181,11 +201,32 @@ export default function TrashPage() {
 
       <div className="flex flex-1 flex-col gap-4 p-6">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Trash2Icon className="h-5 w-5 text-destructive" />
             <h1 className="text-lg font-semibold">Trash</h1>
+            {!isAdmin && (
+              <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
+                Viewing your deleted items
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Filter Dropdown - Only visible to admins */}
+            {isAdmin && (
+              <FilterSelect
+                label="Show"
+                value={filterBy}
+                onValueChange={(value) => {
+                  setFilterBy(value as "all" | "mine");
+                  clearSelection();
+                }}
+                options={[
+                  { id: "all", name: "All items" },
+                  { id: "mine", name: "My deletions only" },
+                ]}
+              />
+            )}
+            
             {someSelected && (
               <>
                 <Button
@@ -286,10 +327,14 @@ export default function TrashPage() {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">{folder.name}</div>
                       <div className="text-xs text-muted-foreground">
-                        Folder · Deleted at{" "}
-                        {folder.deleted_at
+                        Folder · Deleted {folder.deleted_at
                           ? new Date(folder.deleted_at).toLocaleString()
                           : "Unknown"}
+                        {isAdmin && folder.deleted_by_name && (
+                          <span className="ml-1">
+                            by <span className="font-medium">{folder.deleted_by_name}</span>
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -332,10 +377,14 @@ export default function TrashPage() {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">{file.name}</div>
                       <div className="text-xs text-muted-foreground">
-                        File · Deleted at{" "}
-                        {file.deleted_at
+                        File · Deleted {file.deleted_at
                           ? new Date(file.deleted_at).toLocaleString()
                           : "Unknown"}
+                        {isAdmin && file.deleted_by_name && (
+                          <span className="ml-1">
+                            by <span className="font-medium">{file.deleted_by_name}</span>
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex gap-2">

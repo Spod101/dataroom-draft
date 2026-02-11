@@ -27,10 +27,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showEmailNotConfirmed, setShowEmailNotConfirmed] = useState(false);
+  const [resendingEmail, setResendingEmail] = useState(false);
+  const [emailResent, setEmailResent] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setShowEmailNotConfirmed(false);
+    setEmailResent(false);
     setLoading(true);
 
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -39,7 +44,14 @@ export default function LoginPage() {
     });
 
     if (authError) {
-      setError(authError.message);
+      // Check if the error is due to unconfirmed email
+      if (authError.message.toLowerCase().includes("email not confirmed") || 
+          authError.message.toLowerCase().includes("confirm your email")) {
+        setShowEmailNotConfirmed(true);
+        setError("Your email address has not been confirmed yet.");
+      } else {
+        setError(authError.message);
+      }
       setLoading(false);
       return;
     }
@@ -57,6 +69,25 @@ export default function LoginPage() {
     router.push("/");
     router.refresh();
     setLoading(false);
+  }
+
+  async function handleResendConfirmation() {
+    setResendingEmail(true);
+    setError(null);
+
+    const { error: resendError } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim(),
+    });
+
+    if (resendError) {
+      setError(resendError.message);
+      setResendingEmail(false);
+      return;
+    }
+
+    setEmailResent(true);
+    setResendingEmail(false);
   }
 
   return (
@@ -100,6 +131,28 @@ export default function LoginPage() {
             </FieldGroup>
             {error && (
               <FieldError className="text-sm">{error}</FieldError>
+            )}
+            {showEmailNotConfirmed && (
+              <div className="bg-muted/50 border border-border rounded-md p-3 space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Please check your email inbox for a confirmation link. If you haven&apos;t received it, you can request a new one.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResendConfirmation}
+                  disabled={resendingEmail || emailResent}
+                  className="w-full"
+                >
+                  {resendingEmail ? "Sending..." : emailResent ? "Email Sent!" : "Resend Confirmation Email"}
+                </Button>
+                {emailResent && (
+                  <p className="text-xs text-green-600 dark:text-green-400">
+                    Confirmation email has been sent. Please check your inbox and spam folder.
+                  </p>
+                )}
+              </div>
             )}
           </CardContent>
           <CardFooter className="flex flex-col gap-4">

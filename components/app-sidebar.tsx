@@ -50,26 +50,31 @@ const navMain = [
       url: "/dataroom",
       icon: FolderIcon,
       isActive: true,
+      adminOnly: false,
     },
     {
       title: "Permissions",
       url: "/permissions",
       icon: ShieldCheckIcon,
+      adminOnly: true,
     },
     {
       title: "Insights",
       url: "/insights",
       icon: BarChartIcon,
+      adminOnly: true,
     },
     {
       title: "Audit",
       url: "/audit",
       icon: ClipboardListIcon,
+      adminOnly: true,
     },
     {
       title: "Trash",
       url: "/trash",
       icon: Trash2Icon,
+      adminOnly: false,
     },
   ]
 
@@ -81,6 +86,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const displayName = profile?.name ?? user?.email?.split("@")[0] ?? "User"
   const displayEmail = user?.email ?? ""
+  const isAdmin = profile?.role === "admin"
 
   const handleSignOut = async () => {
     await signOut()
@@ -141,20 +147,23 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarGroupLabel>Others</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navMain.filter((item) => item.title !== "Data Room").map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive(item.url)}
-                    tooltip={item.title}
-                  >
-                    <Link href={item.url}>
-                      {item.icon && <item.icon />}
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {navMain
+                .filter((item) => item.title !== "Data Room")
+                .filter((item) => !item.adminOnly || isAdmin)
+                .map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isActive(item.url)}
+                      tooltip={item.title}
+                    >
+                      <Link href={item.url}>
+                        {item.icon && <item.icon />}
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -17,6 +17,7 @@ import { DownloadButton } from "@/components/dataroom/download-button";
 import { TablePagination, PAGE_SIZE } from "@/components/ui/table-pagination";
 import { ChevronDownIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth-context";
 
 type AuditDisplayRow = {
   id: string;
@@ -69,6 +70,9 @@ function formatActionLabel(action: string): string {
 }
 
 export default function AuditPage() {
+  const { profile, loading: authLoading } = useAuth();
+  const isAdmin = profile?.role === "admin";
+
   const [searchTerm, setSearchTerm] = React.useState("");
   const [memberFilter, setMemberFilter] = React.useState("all");
   const [actionFilter, setActionFilter] = React.useState("all");
@@ -153,33 +157,65 @@ export default function AuditPage() {
 
           const fileName = row.file_id ? fileMap.get(row.file_id) : undefined;
           const folderName = row.folder_id ? folderMap.get(row.folder_id) : undefined;
+          const details = (row.details as Record<string, any>) || {};
           let description = "";
 
           const action = row.action as string;
+          
+          // File actions with detailed descriptions
           if (action === "file.hard_delete") {
-            description = fileName ? `Permanently deleted file "${fileName}"` : "Permanently deleted a file";
-          } else if (action === "folder.hard_delete") {
-            description = folderName ? `Permanently deleted folder "${folderName}"` : "Permanently deleted a folder";
+            const deletedFileName = details.deleted_file_id ? fileMap.get(details.deleted_file_id) : fileName;
+            description = `${member} permanently deleted file "${deletedFileName || 'Unknown'}"`;
           } else if (action === "file.upload") {
-            description = fileName ? `Uploaded "${fileName}"` : "Uploaded a file";
+            const uploadedFileName = details.name || fileName;
+            const fileSize = details.size ? ` (${(details.size / 1024).toFixed(1)} KB)` : '';
+            const fileType = details.type ? ` [${details.type}]` : '';
+            description = `${member} uploaded "${uploadedFileName}"${fileSize}${fileType}`;
           } else if (action === "file.rename") {
-            description = fileName ? `Renamed file "${fileName}"` : "Renamed a file";
+            const oldName = details.oldName;
+            const newName = details.newName || fileName;
+            if (oldName && newName) {
+              description = `${member} renamed file from "${oldName}" to "${newName}"`;
+            } else {
+              description = `${member} renamed file to "${newName || fileName || 'Unknown'}"`;
+            }
           } else if (action === "file.delete") {
-            description = fileName ? `Deleted file "${fileName}"` : "Deleted a file";
+            description = `${member} moved file "${fileName || 'Unknown'}" to trash`;
           } else if (action === "file.download") {
-            description = fileName ? `Downloaded "${fileName}"` : "Downloaded a file";
-          } else if (action === "folder.create") {
-            description = folderName ? `Created folder "${folderName}"` : "Created a folder";
-          } else if (action === "folder.rename") {
-            description = folderName ? `Renamed folder "${folderName}"` : "Renamed a folder";
-          } else if (action === "folder.delete") {
-            description = folderName ? `Deleted folder "${folderName}"` : "Deleted a folder";
+            description = `${member} downloaded file "${fileName || 'Unknown'}"`;
           } else if (action === "file.restore") {
-            description = fileName ? `Restored file "${fileName}"` : "Restored a file";
+            description = `${member} restored file "${fileName || 'Unknown'}" from trash`;
+          }
+          
+          // Folder actions with detailed descriptions
+          else if (action === "folder.hard_delete") {
+            const deletedFolderName = details.deleted_folder_id ? folderMap.get(details.deleted_folder_id) : folderName;
+            description = `${member} permanently deleted folder "${deletedFolderName || 'Unknown'}"`;
+          } else if (action === "folder.create") {
+            const createdFolderName = details.name || folderName;
+            description = `${member} created folder "${createdFolderName || 'Unknown'}"`;
+          } else if (action === "folder.rename") {
+            const oldName = details.oldName;
+            const newName = details.newName || folderName;
+            if (oldName && newName) {
+              description = `${member} renamed folder from "${oldName}" to "${newName}"`;
+            } else {
+              description = `${member} renamed folder to "${newName || folderName || 'Unknown'}"`;
+            }
+          } else if (action === "folder.delete") {
+            description = `${member} moved folder "${folderName || 'Unknown'}" to trash`;
           } else if (action === "folder.restore") {
-            description = folderName ? `Restored folder "${folderName}"` : "Restored a folder";
-          } else {
-            description = action;
+            description = `${member} restored folder "${folderName || 'Unknown'}" from trash`;
+          } else if (action === "folder.move") {
+            const movedFolderName = details.folderName || folderName;
+            const oldParent = details.oldParentName || "Root";
+            const newParent = details.newParentName || "Root";
+            description = `${member} moved folder "${movedFolderName}" from "${oldParent}" to "${newParent}"`;
+          }
+          
+          // Fallback for unknown actions
+          else {
+            description = `${member} performed action: ${action}`;
           }
 
           return {
@@ -224,6 +260,30 @@ export default function AuditPage() {
   React.useEffect(() => setPage(1), [searchTerm, memberFilter, actionFilter]);
   // Keep current page when data changes; clamp if page becomes invalid.
   React.useEffect(() => setPage((p) => Math.min(Math.max(p, 1), totalPages)), [totalPages]);
+
+  // Show access denied for non-admins
+  if (!authLoading && !isAdmin) {
+    return (
+      <SidebarInset>
+        <header className="bg-background sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 h-4" />
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbPage>Audit</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </header>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <p className="text-sm text-muted-foreground">
+            Only administrators can access audit logs. You have view-only access to this page.
+          </p>
+        </div>
+      </SidebarInset>
+    );
+  }
 
   return (
     <SidebarInset>

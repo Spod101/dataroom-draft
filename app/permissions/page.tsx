@@ -20,6 +20,7 @@ import {
   FileTextIcon,
   ChevronRightIcon,
   ChevronDownIcon,
+  UserPlusIcon,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
@@ -27,6 +28,29 @@ import type { DataRoomFolder, DataRoomFile } from "@/lib/dataroom-types";
 import { isFolder, isFile } from "@/lib/dataroom-types";
 import { fetchDataRoomTree } from "@/lib/dataroom-supabase";
 import { useAuth } from "@/contexts/auth-context";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import {
+  Field,
+  FieldError,
+  FieldLabel,
+  FieldGroup,
+} from "@/components/ui/field";
 
 type PermissionFlags = { edit: boolean };
 type PermissionSet = Record<string, PermissionFlags>;
@@ -101,6 +125,15 @@ export default function PermissionsPage() {
   const [allUserPermissions, setAllUserPermissions] = React.useState<Record<string, PermissionSet>>({});
 
   const currentPermissions = selectedUser ? allUserPermissions[selectedUser.id] || {} : {};
+
+  // Add User Dialog State
+  const [addUserDialogOpen, setAddUserDialogOpen] = React.useState(false);
+  const [newUserName, setNewUserName] = React.useState("");
+  const [newUserEmail, setNewUserEmail] = React.useState("");
+  const [newUserPassword, setNewUserPassword] = React.useState("");
+  const [newUserRole, setNewUserRole] = React.useState<"user" | "admin">("user");
+  const [addUserError, setAddUserError] = React.useState<string | null>(null);
+  const [addingUser, setAddingUser] = React.useState(false);
 
   // Load users from DB
   React.useEffect(() => {
@@ -227,19 +260,64 @@ export default function PermissionsPage() {
     [itemKinds]
   );
 
+  // Helper function to get all children IDs of an item (recursive)
+  const getAllChildrenIds = (item: PermissionItem): string[] => {
+    const ids: string[] = [];
+    if (item.children && item.children.length > 0) {
+      for (const child of item.children) {
+        ids.push(child.id);
+        if (child.children && child.children.length > 0) {
+          ids.push(...getAllChildrenIds(child));
+        }
+      }
+    }
+    return ids;
+  };
+
+  // Find an item in the tree by ID
+  const findItemById = (items: PermissionItem[], id: string): PermissionItem | null => {
+    for (const item of items) {
+      if (item.id === id) return item;
+      if (item.children && item.children.length > 0) {
+        const found = findItemById(item.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
   const togglePermission = (itemId: string) => {
     if (!selectedUser) return;
+    
+    const item = findItemById(filesTree, itemId);
+    if (!item) return;
+
     setAllUserPermissions((prev) => {
       const userPerms = prev[selectedUser.id] || {};
       const current = userPerms[itemId] || { edit: false };
       const next: PermissionFlags = {
         edit: !current.edit,
       };
+      
+      // Get all children IDs if this is a folder
+      const childrenIds = item.kind === "folder" ? getAllChildrenIds(item) : [];
+      
+      // Update permission for the clicked item
       const updatedUserPerms: PermissionSet = {
         ...userPerms,
         [itemId]: next,
       };
+      
+      // Cascade the same permission to all children
+      for (const childId of childrenIds) {
+        updatedUserPerms[childId] = next;
+        // Persist each child permission
+        void persistPermission(selectedUser.id, childId, next);
+      }
+      
+      // Persist the main item permission
       void persistPermission(selectedUser.id, itemId, next);
+      
       return {
         ...prev,
         [selectedUser.id]: updatedUserPerms,
@@ -253,10 +331,80 @@ export default function PermissionsPage() {
     );
   };
 
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddUserError(null);
+    setAddingUser(true);
+
+    try {
+      // Create auth user with email confirmation disabled for admin-created users
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: newUserEmail.trim(),
+        password: newUserPassword,
+        options: { 
+          emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/`,
+          // Note: This requires Supabase email confirmation to be disabled in project settings
+          // or use the Admin API for auto-confirmation
+        },
+      });
+
+      if (authError) {
+        setAddUserError(authError.message);
+        setAddingUser(false);
+        return;
+      }
+
+      if (!authData.user) {
+        setAddUserError("Failed to create user");
+        setAddingUser(false);
+        return;
+      }
+
+      // Create user profile
+      const { error: profileError } = await supabase.from("users").insert({
+        id: authData.user.id,
+        name: newUserName.trim() || newUserEmail.trim().split("@")[0],
+        email: authData.user.email || newUserEmail.trim(),
+        role: newUserRole,
+      });
+
+      if (profileError) {
+        setAddUserError(profileError.message);
+        setAddingUser(false);
+        return;
+      }
+
+      // Refresh users list
+      const { data: updatedUsers, error: fetchError } = await supabase
+        .from("users")
+        .select("id, name, email, role")
+        .order("name", { ascending: true });
+
+      if (!fetchError && updatedUsers) {
+        setUsers(updatedUsers as PermissionUser[]);
+      }
+
+      // Reset form and close dialog
+      setNewUserName("");
+      setNewUserEmail("");
+      setNewUserPassword("");
+      setNewUserRole("user");
+      setAddUserDialogOpen(false);
+      setAddingUser(false);
+    } catch (err) {
+      setAddUserError("An unexpected error occurred");
+      setAddingUser(false);
+    }
+  };
+
   const renderFileRow = (item: PermissionItem, level: number = 0) => {
     const isExpanded = expandedFolders.includes(item.id);
     const hasChildren = !!item.children && item.children.length > 0;
     const itemPermissions = currentPermissions[item.id] || { edit: false };
+    
+    // Check if selected user is admin - admins always have edit access
+    const isSelectedUserAdmin = selectedUser?.role === "admin";
+    const hasEditAccess = isSelectedUserAdmin || itemPermissions.edit;
     
     return (
       <React.Fragment key={item.id}>
@@ -297,8 +445,9 @@ export default function PermissionsPage() {
           {/* Permissions toggles */}
           <div className="flex items-center pr-2">
             <Switch 
-              checked={itemPermissions.edit}
+              checked={hasEditAccess}
               onCheckedChange={() => togglePermission(item.id)}
+              disabled={isSelectedUserAdmin}
               className="data-[state=checked]:bg-primary"
             />
           </div>
@@ -375,8 +524,106 @@ export default function PermissionsPage() {
       <div className="flex flex-1 p-4 md:p-6 gap-4">
         {/* Left Panel - Users */}
         <Card className="w-[400px] flex-shrink-0 flex flex-col">
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
             <CardTitle className="text-lg">Users</CardTitle>
+            {isAdmin && (
+              <Dialog open={addUserDialogOpen} onOpenChange={setAddUserDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <UserPlusIcon className="h-4 w-4 mr-2" />
+                    Add User
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Add New User</DialogTitle>
+                    <DialogDescription>
+                      Create a new user account. Only administrators can add users.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleAddUser}>
+                    <FieldGroup>
+                      <Field>
+                        <FieldLabel htmlFor="add-user-name">Name</FieldLabel>
+                        <Input
+                          id="add-user-name"
+                          type="text"
+                          placeholder="Full name"
+                          value={newUserName}
+                          onChange={(e) => setNewUserName(e.target.value)}
+                          disabled={addingUser}
+                          required
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="add-user-email">Email</FieldLabel>
+                        <Input
+                          id="add-user-email"
+                          type="email"
+                          placeholder="user@example.com"
+                          value={newUserEmail}
+                          onChange={(e) => setNewUserEmail(e.target.value)}
+                          disabled={addingUser}
+                          required
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="add-user-password">Password</FieldLabel>
+                        <Input
+                          id="add-user-password"
+                          type="password"
+                          placeholder="••••••••"
+                          value={newUserPassword}
+                          onChange={(e) => setNewUserPassword(e.target.value)}
+                          disabled={addingUser}
+                          required
+                          minLength={6}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="add-user-role">Role</FieldLabel>
+                        <Select
+                          value={newUserRole}
+                          onValueChange={(value) => setNewUserRole(value as "user" | "admin")}
+                          disabled={addingUser}
+                        >
+                          <SelectTrigger id="add-user-role" className="w-full">
+                            <SelectValue placeholder="Select role" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="user">User</SelectItem>
+                            <SelectItem value="admin">Admin</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    </FieldGroup>
+                    {addUserError && (
+                      <FieldError className="text-sm mt-2">{addUserError}</FieldError>
+                    )}
+                    <DialogFooter className="mt-6">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setAddUserDialogOpen(false);
+                          setNewUserName("");
+                          setNewUserEmail("");
+                          setNewUserPassword("");
+                          setNewUserRole("user");
+                          setAddUserError(null);
+                        }}
+                        disabled={addingUser}
+                      >
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={addingUser}>
+                        {addingUser ? "Adding..." : "Add User"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
           </CardHeader>
           <CardContent className="flex-1 flex flex-col p-0">
             {/* Search */}
@@ -515,6 +762,15 @@ export default function PermissionsPage() {
                 variant="compact"
               />
             </div>
+
+            {/* Admin Notice */}
+            {selectedUser && selectedUser.role === "admin" && (
+              <div className="mx-4 mb-3 p-3 bg-primary/10 border border-primary/20 rounded-md">
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-semibold text-primary">Admin users</span> automatically have full view and edit access to all files and folders. Permissions cannot be modified for admin users.
+                </p>
+              </div>
+            )}
 
             {/* Column Headers */}
             <div className="flex items-center py-2 px-4 border-b text-sm text-muted-foreground bg-muted/30">

@@ -14,6 +14,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SearchBar } from "@/components/dataroom/search-bar";
 import { FileTextIcon, UsersIcon, EyeIcon, DownloadIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth-context";
 
 type FileSummary = {
   id: string;
@@ -31,6 +32,9 @@ type UserFileStats = {
 };
 
 export default function InsightsPage() {
+  const { profile, loading: authLoading } = useAuth();
+  const isAdmin = profile?.role === "admin";
+
   const [fileSummaries, setFileSummaries] = React.useState<FileSummary[]>([]);
   const [selectedFileId, setSelectedFileId] = React.useState<string | null>(null);
   const [userStats, setUserStats] = React.useState<UserFileStats[]>([]);
@@ -227,6 +231,30 @@ export default function InsightsPage() {
     })
     .join(" ");
   const areaPath = `${pathPoints} L ${chartWidth} ${chartHeight} L 0 ${chartHeight} Z`;
+
+  // Show access denied for non-admins
+  if (!authLoading && !isAdmin) {
+    return (
+      <SidebarInset>
+        <header className="bg-background sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 h-4" />
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbPage>Insights</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        </header>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <p className="text-sm text-muted-foreground">
+            Only administrators can access insights. You have view-only access to this page.
+          </p>
+        </div>
+      </SidebarInset>
+    );
+  }
 
   return (
     <SidebarInset>
