@@ -143,6 +143,9 @@ export default function IndustryPage() {
   // Keep current page when data changes; clamp if page becomes invalid.
   React.useEffect(() => setPage((p) => Math.min(Math.max(p, 1), totalPages)), [totalPages]);
 
+  // Location column is not needed for this page (no search functionality)
+  const showLocationColumn = false;
+
   const handleRename = async (newName: string) => {
     if (!renameItemId) return;
     setRenameOpen(false);

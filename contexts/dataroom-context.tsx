@@ -166,7 +166,7 @@ function reducer(state: DataRoomState, action: Action): DataRoomState {
     case "SET_TREE":
       return { ...state, rootFolders: action.rootFolders, loading: false, error: null };
     case "SET_ROOT_FOLDERS":
-      return { ...state, rootFolders: action.rootFolders, loading: false, error: null, loadedFolderIds: new Set() };
+      return { ...state, rootFolders: action.rootFolders, loading: false, error: null, loadedFolderIds: new Set<string>() };
     case "SET_FOLDER_CHILDREN": {
       const updatedFolders = updateFolderChildren(
         state.rootFolders,
@@ -292,7 +292,7 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     loading: true,
     error: null,
     upload: null,
-    loadedFolderIds: new Set(),
+    loadedFolderIds: new Set<string>(),
   });
 
   const refresh = React.useCallback(async () => {

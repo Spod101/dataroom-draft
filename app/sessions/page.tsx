@@ -9,7 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Smartphone, Monitor, Tablet, X } from "lucide-react";
 import { useState } from "react";
@@ -66,10 +65,10 @@ export default function SessionsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Active Sessions"
-        description="Manage your active sessions across all devices"
-      />
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold">Active Sessions</h1>
+        <p className="text-muted-foreground">Manage your active sessions across all devices</p>
+      </div>
 
       <div className="flex justify-between items-center">
         <p className="text-sm text-muted-foreground">
