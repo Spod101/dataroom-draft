@@ -50,6 +50,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { TablePagination, PAGE_SIZE } from "@/components/ui/table-pagination";
+import { PasteUploadHandler } from "@/components/dataroom/paste-upload-handler";
 
 const ROOT_PATH: string[] = [];
 
@@ -62,7 +63,7 @@ function getItemIcon(item: DataRoomItem, size: "sm" | "lg" = "lg") {
 
 export default function DataRoomPage() {
   const router = useRouter();
-  const { state, getChildren, getFolder, addFolder, renameItem, deleteItem, moveItem, setSharing } = useDataRoom();
+  const { state, getChildren, getFolder, addFolder, renameItem, deleteItem, moveItem, setSharing, uploadFiles } = useDataRoom();
   const toast = useToast();
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
   const ignoreNextRowClickRef = React.useRef(false);
@@ -686,6 +687,12 @@ export default function DataRoomPage() {
         confirmLabel="Move"
         cancelLabel="Cancel"
         onConfirm={handleMoveConfirm}
+      />
+
+      {/* Paste to upload handler */}
+      <PasteUploadHandler
+        onUpload={(files) => uploadFiles(ROOT_PATH, files)}
+        enabled={!hasActiveSearchOrFilter}
       />
     </SidebarInset>
   );

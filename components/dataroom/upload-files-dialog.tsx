@@ -8,6 +8,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { UploadDropZone, filesToDataRoomFiles } from "@/components/dataroom/upload-drop-zone";
 import type { DataRoomFile } from "@/lib/dataroom-types";
@@ -44,6 +54,7 @@ export function UploadFilesDialog({
   const { state } = useDataRoom();
   const upload = state.upload;
   const uploading = !!upload;
+  const [showCancelDialog, setShowCancelDialog] = React.useState(false);
 
   const handleFiles = (files: DataRoomFile[], rawFiles?: File[]) => {
     onFiles(files, rawFiles);
@@ -81,8 +92,9 @@ export function UploadFilesDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Upload files</DialogTitle>
           <DialogDescription>
@@ -98,13 +110,15 @@ export function UploadFilesDialog({
 
         {upload && (
           <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-primary">
                   Uploading {upload.completedFiles}/{upload.totalFiles}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {upload.currentFileName ? upload.currentFileName : "Starting..."} ·{" "}
+                  {upload.currentFileName ? upload.currentFileName : "Starting..."}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {formatBytes(upload.uploadedBytes)} / {formatBytes(upload.totalBytes)}
                 </p>
               </div>
@@ -117,7 +131,7 @@ export function UploadFilesDialog({
                 %
               </div>
             </div>
-            <div className="mt-2 h-2 w-full rounded-full bg-primary/15 overflow-hidden">
+            <div className="h-2 w-full rounded-full bg-primary/15 overflow-hidden mb-2">
               <div
                 className="h-full bg-primary transition-[width] duration-200"
                 style={{
@@ -131,6 +145,14 @@ export function UploadFilesDialog({
                 }}
               />
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setShowCancelDialog(true)}
+            >
+              Cancel Upload
+            </Button>
           </div>
         )}
 
@@ -191,5 +213,30 @@ export function UploadFilesDialog({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Cancel upload confirmation dialog */}
+    <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Cancel Upload?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Are you sure you want to cancel the upload? Files that haven't been uploaded yet will be lost.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Continue Uploading</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              setShowCancelDialog(false);
+              onOpenChange(false);
+            }}
+            variant="destructive"
+          >
+            Cancel Upload
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
