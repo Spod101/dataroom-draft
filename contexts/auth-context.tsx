@@ -2,6 +2,14 @@
 
 import * as React from "react";
 import { supabase } from "@/lib/supabase";
+import { 
+  createSession, 
+  updateSessionActivity, 
+  getDeviceInfo, 
+  shouldUpdateActivity,
+  revokeAllUserSessions,
+  type UserSession 
+} from "@/lib/session-utils";
 
 export type UserProfile = {
   id: string;
@@ -14,10 +22,14 @@ type AuthState = {
   user: { id: string; email: string } | null;
   profile: UserProfile | null;
   loading: boolean;
+  currentSession: UserSession | null;
+  sessions: UserSession[];
 };
 
 type AuthContextValue = AuthState & {
   signOut: () => Promise<void>;
+  signOutAllDevices: () => Promise<void>;
+  refreshSessions: () => Promise<void>;
 };
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
@@ -27,7 +39,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user: null,
     profile: null,
     loading: true,
+    currentSession: null,
+    sessions: [],
   });
+
+  const lastActivityUpdate = React.useRef<number>(0);
 
   const fetchProfile = React.useCallback(async (userId: string): Promise<UserProfile | null> => {
     const { data, error } = await supabase
@@ -39,6 +55,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return data as UserProfile;
   }, []);
 
+  const fetchSessions = React.useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from("user_sessions")
+      .select("*")
+      .eq("user_id", userId)
+      .gte("expires_at", new Date().toISOString())
+      .order("last_activity", { ascending: false });
+
+    if (error || !data) return [];
+    return data as UserSession[];
+  }, []);
+
+  const updateActivity = React.useCallback(async (sessionId: string) => {
+    if (shouldUpdateActivity(lastActivityUpdate.current)) {
+      await updateSessionActivity(sessionId);
+      lastActivityUpdate.current = Date.now();
+    }
+  }, []);
+
   React.useEffect(() => {
     let mounted = true;
 
@@ -46,15 +81,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { session } } = await supabase.auth.getSession();
       if (!mounted) return;
       if (!session?.user) {
-        setState({ user: null, profile: null, loading: false });
+        setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
         return;
       }
+
       const profile = await fetchProfile(session.user.id);
+      const sessions = await fetchSessions(session.user.id);
+      
+      // Find existing session for this device instead of creating new one
+      const deviceInfo = getDeviceInfo();
+      const existingSession = sessions.find(s => s.device_info === deviceInfo);
+
       if (!mounted) return;
       setState({
         user: { id: session.user.id, email: session.user.email ?? "" },
         profile,
         loading: false,
+        currentSession: existingSession || null,
+        sessions,
       });
     };
 
@@ -65,15 +109,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
       if (!session?.user) {
-        setState({ user: null, profile: null, loading: false });
+        setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
         return;
       }
+
       const profile = await fetchProfile(session.user.id);
+      const sessions = await fetchSessions(session.user.id);
+
+      // Only create session on actual sign in event
+      let currentSession = null;
+      if (event === 'SIGNED_IN') {
+        const deviceInfo = getDeviceInfo();
+        currentSession = await createSession(session.user.id, deviceInfo);
+      } else {
+        // Find existing session for this device
+        const deviceInfo = getDeviceInfo();
+        currentSession = sessions.find(s => s.device_info === deviceInfo) || null;
+      }
+
       if (!mounted) return;
       setState({
         user: { id: session.user.id, email: session.user.email ?? "" },
         profile,
         loading: false,
+        currentSession,
+        sessions,
       });
     });
 
@@ -81,16 +141,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchProfile]);
+  }, [fetchProfile, fetchSessions]);
+
+  // Track activity
+  React.useEffect(() => {
+    if (!state.currentSession) return;
+
+    const handleActivity = () => {
+      updateActivity(state.currentSession!.id);
+    };
+
+    // Update activity on user interactions
+    window.addEventListener('mousedown', handleActivity);
+    window.addEventListener('keydown', handleActivity);
+    window.addEventListener('scroll', handleActivity);
+    window.addEventListener('touchstart', handleActivity);
+
+    return () => {
+      window.removeEventListener('mousedown', handleActivity);
+      window.removeEventListener('keydown', handleActivity);
+      window.removeEventListener('scroll', handleActivity);
+      window.removeEventListener('touchstart', handleActivity);
+    };
+  }, [state.currentSession, updateActivity]);
+
+  const refreshSessions = React.useCallback(async () => {
+    if (!state.user) return;
+    const sessions = await fetchSessions(state.user.id);
+    setState(prev => ({ ...prev, sessions }));
+  }, [state.user, fetchSessions]);
 
   const signOut = React.useCallback(async () => {
+    if (state.currentSession) {
+      await supabase
+        .from("user_sessions")
+        .delete()
+        .eq("id", state.currentSession.id);
+    }
     await supabase.auth.signOut();
-    setState({ user: null, profile: null, loading: false });
-  }, []);
+    setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
+  }, [state.currentSession]);
+
+  const signOutAllDevices = React.useCallback(async () => {
+    if (!state.user) return;
+    await revokeAllUserSessions(state.user.id);
+    await supabase.auth.signOut();
+    setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
+  }, [state.user]);
 
   const value: AuthContextValue = {
     ...state,
     signOut,
+    signOutAllDevices,
+    refreshSessions,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

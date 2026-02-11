@@ -6,10 +6,8 @@ import Image from "next/image"
 import { usePathname, useRouter } from "next/navigation"
 import {
   FolderIcon,
-  SettingsIcon,
   ShieldCheckIcon,
   BarChartIcon,
-  BellIcon,
   ChevronDownIcon,
   ClipboardListIcon,
   SunIcon,
@@ -41,6 +39,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useTheme } from "@/components/theme-provider"
 
@@ -83,6 +91,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const router = useRouter()
   const { theme, setTheme } = useTheme()
   const { user, profile, signOut } = useAuth()
+  const [showLogoutDialog, setShowLogoutDialog] = React.useState(false)
 
   const displayName = profile?.name ?? user?.email?.split("@")[0] ?? "User"
   const displayEmail = user?.email ?? ""
@@ -235,16 +244,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     </>
                   )}
                 </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <BellIcon className="mr-2 h-4 w-4" />
-                  Notifications
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <SettingsIcon className="mr-2 h-4 w-4" />
-                  Settings
-                </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleSignOut}>
+                <DropdownMenuItem onClick={() => setShowLogoutDialog(true)}>
                   <LogOutIcon className="mr-2 h-4 w-4" />
                   Log out
                 </DropdownMenuItem>
@@ -254,6 +255,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarFooter>
       <SidebarRail />
+
+      <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to log out?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You will be signed out of your account and redirected to the login page.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleSignOut}>Log out</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Sidebar>
   )
 }

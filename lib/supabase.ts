@@ -13,4 +13,12 @@ if (!supabaseUrl || !supabaseAnonKey) {
  * Supabase client for database, auth, storage, and realtime.
  * Use in Client Components, Server Components, API routes, and Server Actions.
  */
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storageKey: 'sb-auth-token',
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+  },
+});

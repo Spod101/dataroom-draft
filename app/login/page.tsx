@@ -56,19 +56,13 @@ export default function LoginPage() {
       return;
     }
 
-    // Optional: load profile from your `users` table by email (name, role)
-    if (authData.user?.email) {
-      const { data: profile } = await supabase
-        .from("users")
-        .select("id, name, email, role")
-        .eq("email", authData.user.email)
-        .single();
-      // You can store profile in context or redirect; session is already set
-    }
-
-    router.push("/");
-    router.refresh();
+    // Redirect to intended page or home
+    const params = new URLSearchParams(window.location.search);
+    const redirect = params.get('redirect') || '/';
+    
     setLoading(false);
+    router.push(redirect);
+    router.refresh();
   }
 
   async function handleResendConfirmation() {
