@@ -78,13 +78,26 @@ export default function IndustryPage() {
     [folderSlug, subfolderSlug, industrySlug]
   );
 
-  const { getChildren, getFolder, addFolder, addFiles, uploadFiles, renameItem, deleteItem, moveItem, setSharing } =
+  const { state, getChildren, getFolder, loadFolderChildren, addFolder, addFiles, uploadFiles, renameItem, deleteItem, moveItem, setSharing } =
     useDataRoom();
   const toast = useToast();
   const parentFolder = getFolder([folderSlug]);
   const subfolder = getFolder([folderSlug, subfolderSlug]);
   const folder = getFolder(path);
   const children = getChildren(path);
+
+  // Lazy load folder children when navigating into this folder
+  React.useEffect(() => {
+    if (parentFolder && !state.loadedFolderIds.has(parentFolder.id)) {
+      loadFolderChildren(parentFolder.id);
+    }
+    if (subfolder && !state.loadedFolderIds.has(subfolder.id)) {
+      loadFolderChildren(subfolder.id);
+    }
+    if (folder && !state.loadedFolderIds.has(folder.id)) {
+      loadFolderChildren(folder.id);
+    }
+  }, [parentFolder, subfolder, folder, state.loadedFolderIds, loadFolderChildren]);
 
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
   const ignoreNextRowClickRef = React.useRef(false);

@@ -81,11 +81,18 @@ export default function FolderPage() {
   const folderSlug = params.folder as string;
   const path = React.useMemo(() => [folderSlug], [folderSlug]);
 
-  const { state, getChildren, getFolder, addFolder, addFiles, uploadFiles, renameItem, deleteItem, moveItem, setSharing } =
+  const { state, getChildren, getFolder, loadFolderChildren, addFolder, addFiles, uploadFiles, renameItem, deleteItem, moveItem, setSharing } =
     useDataRoom();
   const toast = useToast();
   const folder = getFolder(path);
   const children = getChildren(path);
+
+  // Lazy load folder children when navigating into this folder
+  React.useEffect(() => {
+    if (folder && !state.loadedFolderIds.has(folder.id)) {
+      loadFolderChildren(folder.id);
+    }
+  }, [folder, state.loadedFolderIds, loadFolderChildren]);
 
   const [searchValue, setSearchValue] = React.useState("");
   const [fileTypeFilter, setFileTypeFilter] = React.useState("all");

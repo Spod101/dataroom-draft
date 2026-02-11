@@ -10,6 +10,8 @@ import type {
 import { isFolder, isFile } from "@/lib/dataroom-types";
 import {
   fetchDataRoomTree,
+  fetchRootFolders,
+  fetchFolderChildren,
   createFolder,
   uploadFileToFolder,
   renameFolder,
@@ -26,6 +28,7 @@ export type DataRoomState = {
   loading: boolean;
   error: string | null;
   upload: UploadProgress | null;
+  loadedFolderIds: Set<string>; // Track which folders have had their children loaded
 };
 
 export type UploadProgress = {
@@ -125,6 +128,8 @@ const now = formatDate();
 
 type Action =
   | { type: "SET_TREE"; rootFolders: DataRoomFolder[] }
+  | { type: "SET_ROOT_FOLDERS"; rootFolders: DataRoomFolder[] }
+  | { type: "SET_FOLDER_CHILDREN"; folderId: string; folders: DataRoomFolder[]; files: DataRoomFile[] }
   | { type: "SET_LOADING"; loading: boolean }
   | { type: "SET_ERROR"; error: string | null }
   | { type: "ADD_FILES_AT_PATH"; path: DataRoomPath; files: DataRoomFile[] }
@@ -135,10 +140,44 @@ type Action =
   | { type: "UPLOAD_UPDATE"; completedFiles: number; uploadedBytes: number; currentFileName: string | null }
   | { type: "UPLOAD_END" };
 
+function updateFolderChildren(
+  folders: DataRoomFolder[],
+  folderId: string,
+  childFolders: DataRoomFolder[],
+  childFiles: DataRoomFile[]
+): DataRoomFolder[] {
+  return folders.map((folder) => {
+    if (folder.id === folderId) {
+      return { ...folder, children: [...childFolders, ...childFiles] };
+    }
+    // Recursively check children
+    const childFolderList = folder.children.filter((c): c is DataRoomFolder => isFolder(c));
+    if (childFolderList.length > 0) {
+      const updatedChildFolders = updateFolderChildren(childFolderList, folderId, childFolders, childFiles);
+      const childFileList = folder.children.filter((c): c is DataRoomFile => isFile(c));
+      return { ...folder, children: [...updatedChildFolders, ...childFileList] };
+    }
+    return folder;
+  });
+}
+
 function reducer(state: DataRoomState, action: Action): DataRoomState {
   switch (action.type) {
     case "SET_TREE":
       return { ...state, rootFolders: action.rootFolders, loading: false, error: null };
+    case "SET_ROOT_FOLDERS":
+      return { ...state, rootFolders: action.rootFolders, loading: false, error: null, loadedFolderIds: new Set() };
+    case "SET_FOLDER_CHILDREN": {
+      const updatedFolders = updateFolderChildren(
+        state.rootFolders,
+        action.folderId,
+        action.folders,
+        action.files
+      );
+      const newLoadedIds = new Set(state.loadedFolderIds);
+      newLoadedIds.add(action.folderId);
+      return { ...state, rootFolders: updatedFolders, loadedFolderIds: newLoadedIds };
+    }
     case "SET_LOADING":
       return { ...state, loading: action.loading };
     case "SET_ERROR":
@@ -227,6 +266,7 @@ export function getAllFoldersWithPaths(rootFolders: DataRoomFolder[]): FolderWit
 type DataRoomContextValue = {
   state: DataRoomState;
   refresh: () => Promise<void>;
+  loadFolderChildren: (folderId: string) => Promise<void>;
   getChildren: (path: DataRoomPath) => DataRoomItem[];
   getFolder: (path: DataRoomPath) => DataRoomFolder | null;
   addFolder: (path: DataRoomPath, name: string) => Promise<void>;
@@ -252,17 +292,31 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     loading: true,
     error: null,
     upload: null,
+    loadedFolderIds: new Set(),
   });
 
   const refresh = React.useCallback(async () => {
     dispatch({ type: "SET_LOADING", loading: true });
     try {
-      const rootFolders = await fetchDataRoomTree();
-      dispatch({ type: "SET_TREE", rootFolders });
+      // Use lazy loading: only fetch root folders initially
+      const rootFolders = await fetchRootFolders();
+      dispatch({ type: "SET_ROOT_FOLDERS", rootFolders });
     } catch (e) {
       dispatch({ type: "SET_ERROR", error: e instanceof Error ? e.message : "Failed to load" });
     }
   }, []);
+
+  const loadFolderChildren = React.useCallback(async (folderId: string) => {
+    // Don't reload if already loaded
+    if (state.loadedFolderIds.has(folderId)) return;
+
+    try {
+      const { folders, files } = await fetchFolderChildren(folderId);
+      dispatch({ type: "SET_FOLDER_CHILDREN", folderId, folders, files });
+    } catch (e) {
+      dispatch({ type: "SET_ERROR", error: e instanceof Error ? e.message : "Failed to load folder" });
+    }
+  }, [state.loadedFolderIds]);
 
   React.useEffect(() => {
     refresh();
@@ -464,6 +518,7 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
   const value: DataRoomContextValue = {
     state,
     refresh,
+    loadFolderChildren,
     getChildren,
     getFolder,
     addFolder,
