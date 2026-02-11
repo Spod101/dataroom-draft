@@ -58,6 +58,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 
 function getItemIcon(item: DataRoomItem, size: "sm" | "lg" = "lg") {
   const sizeClass = size === "sm" ? "h-5 w-5" : "h-10 w-10";
@@ -94,6 +95,7 @@ export default function IndustryChildPage() {
   const [renameName, setRenameName] = React.useState("");
   const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deleteItemId, setDeleteItemId] = React.useState<string | null>(null);
+  const [deleteIds, setDeleteIds] = React.useState<Set<string>>(new Set());
   const [deleteName, setDeleteName] = React.useState("");
   const [shareOpen, setShareOpen] = React.useState(false);
   const [shareLink, setShareLink] = React.useState("");
@@ -106,7 +108,9 @@ export default function IndustryChildPage() {
   const [newFolderOpen, setNewFolderOpen] = React.useState(false);
   const [moveOpen, setMoveOpen] = React.useState(false);
   const [moveItemObj, setMoveItemObj] = React.useState<DataRoomItem | null>(null);
+  const [moveItems, setMoveItems] = React.useState<DataRoomItem[] | null>(null);
   const [moveConfirmOpen, setMoveConfirmOpen] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [moveTargetPath, setMoveTargetPath] = React.useState<DataRoomPath | null>(null);
   const [moveTargetLabel, setMoveTargetLabel] = React.useState("");
   const [uploadDialogOpen, setUploadDialogOpen] = React.useState(false);
@@ -140,13 +144,20 @@ export default function IndustryChildPage() {
   };
 
   const handleDelete = async () => {
-    if (!deleteItemId) return;
+    const idsToDelete = deleteIds.size > 0 ? deleteIds : deleteItemId ? new Set([deleteItemId]) : new Set();
+    if (idsToDelete.size === 0) return;
     setDeleteOpen(false);
-    const id = deleteItemId;
     setDeleteItemId(null);
+    const ids = Array.from(idsToDelete);
+    setDeleteIds(new Set());
     try {
-      await deleteItem(path, id);
-      toast.success("Item deleted");
+      for (const id of ids) await deleteItem(path, id);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      toast.success(ids.length === 1 ? "Item deleted" : `${ids.length} items deleted`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Delete failed");
     }
@@ -155,6 +166,7 @@ export default function IndustryChildPage() {
   const openDelete = (item: DataRoomItem) => {
     ignoreNextRowClickRef.current = true;
     setDeleteItemId(item.id);
+    setDeleteIds(new Set());
     setDeleteName(item.name);
     setDeleteOpen(true);
   };
@@ -260,7 +272,35 @@ export default function IndustryChildPage() {
   const openMove = (item: DataRoomItem) => {
     ignoreNextRowClickRef.current = true;
     setMoveItemObj(item);
+    setMoveItems(null);
     setMoveOpen(true);
+  };
+
+  const selectedItems = React.useMemo(
+    () => children.filter((c) => selectedIds.has(c.id)),
+    [children, selectedIds]
+  );
+  const allSelected = children.length > 0 && selectedIds.size === children.length;
+  const someSelected = selectedIds.size > 0;
+
+  const toggleSelectAll = () => {
+    if (allSelected) setSelectedIds(new Set());
+    else setSelectedIds(new Set(children.map((c) => c.id)));
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const openBulkMove = () => {
+    if (selectedItems.length === 0) return;
+    setMoveItemObj(null);
+    setMoveItems(selectedItems);
+    setMoveOpen(true);
+  };
+  const openBulkDelete = () => {
+    if (selectedItems.length === 0) return;
+    setDeleteItemId(null);
+    setDeleteIds(new Set(selectedItems.map((i) => i.id)));
+    setDeleteName(selectedItems.length === 1 ? selectedItems[0].name : `${selectedItems.length} items`);
+    setDeleteOpen(true);
   };
 
   const handleMoveSelect = (targetPath: DataRoomPath) => {
@@ -272,12 +312,20 @@ export default function IndustryChildPage() {
   };
 
   const handleMoveConfirm = () => {
-    if (!moveItemObj || moveTargetPath === null) return;
-    moveItem(path, moveItemObj.id, moveTargetPath);
+    if (moveTargetPath === null) return;
+    const itemsToMove = moveItems && moveItems.length > 0 ? moveItems : moveItemObj ? [moveItemObj] : [];
+    if (itemsToMove.length === 0) return;
+    for (const item of itemsToMove) moveItem(path, item.id, moveTargetPath);
     setMoveConfirmOpen(false);
     setMoveTargetPath(null);
     setMoveTargetLabel("");
     setMoveItemObj(null);
+    setMoveItems(null);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      itemsToMove.forEach((i) => next.delete(i.id));
+      return next;
+    });
   };
 
   if (!folder) {
@@ -374,12 +422,36 @@ export default function IndustryChildPage() {
           errorMessage={uploadError}
         />
 
+        {someSelected && (
+          <div className="flex items-center gap-3 py-2 px-3 rounded-lg bg-primary/5 border border-primary/20">
+            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+            <Button variant="outline" size="sm" onClick={openBulkMove}>
+              <FolderIcon className="h-4 w-4 mr-2" />
+              Move
+            </Button>
+            <Button variant="destructive" size="sm" onClick={openBulkDelete}>
+              <TrashIcon className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
+            <Button variant="ghost" size="sm" onClick={clearSelection}>
+              Clear selection
+            </Button>
+          </div>
+        )}
+
         <div className="flex-1">
           {viewMode === "list" ? (
             <Card className="border-primary/20">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={() => toggleSelectAll()}
+                        aria-label="Select all"
+                      />
+                    </TableHead>
                     <TableHead className="w-[40%]">Name</TableHead>
                     <TableHead>Modified</TableHead>
                     <TableHead>Modified By</TableHead>
@@ -392,7 +464,7 @@ export default function IndustryChildPage() {
                   {children.map((item) => (
                     <TableRow
                       key={item.id}
-                      className="cursor-pointer hover:bg-primary/5 group"
+                      className={`cursor-pointer hover:bg-primary/5 group ${selectedIds.has(item.id) ? "bg-primary/5" : ""}`}
                       onClick={() => {
                         if (ignoreNextRowClickRef.current) {
                           ignoreNextRowClickRef.current = false;
@@ -401,6 +473,20 @@ export default function IndustryChildPage() {
                         navigateTo(item);
                       }}
                     >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(item.id)}
+                          onCheckedChange={(checked) =>
+                            setSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              if (checked) next.add(item.id);
+                              else next.delete(item.id);
+                              return next;
+                            })
+                          }
+                          aria-label={`Select ${item.name}`}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-3">
                           {getItemIcon(item, "sm")}
@@ -483,11 +569,24 @@ export default function IndustryChildPage() {
               </Table>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              {children.length > 0 && (
+                <div className="flex items-center gap-2 mb-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => toggleSelectAll()}
+                  >
+                    {allSelected ? "Clear selection" : "Select all"}
+                  </Button>
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {children.map((item) => (
                 <Card
                   key={item.id}
-                  className="group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full"
+                  className={`group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full ${selectedIds.has(item.id) ? "ring-2 ring-primary" : ""}`}
                   onClick={() => {
                     if (ignoreNextRowClickRef.current) {
                       ignoreNextRowClickRef.current = false;
@@ -499,7 +598,21 @@ export default function IndustryChildPage() {
                   <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                   <CardContent className="p-6 h-full flex flex-col relative">
                     <div className="flex items-start justify-between mb-4">
-                      {getItemIcon(item)}
+                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.has(item.id)}
+                          onCheckedChange={(checked) =>
+                            setSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              if (checked) next.add(item.id);
+                              else next.delete(item.id);
+                              return next;
+                            })
+                          }
+                          aria-label={`Select ${item.name}`}
+                        />
+                        {getItemIcon(item)}
+                      </div>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
                           <Button
@@ -586,6 +699,7 @@ export default function IndustryChildPage() {
                 </CardContent>
               </Card>
             </div>
+            </div>
           )}
         </div>
       </div>
@@ -643,13 +757,14 @@ export default function IndustryChildPage() {
         onAccessChange={handleShareAccessChange}
       />
 
-      {moveItemObj && (
+      {(moveItemObj || (moveItems && moveItems.length > 0)) && (
         <MoveToFolderModal
           open={moveOpen}
           onOpenChange={setMoveOpen}
-          itemName={moveItemObj.name}
+          itemName={moveItemObj?.name}
           sourcePath={path}
-          movingItem={moveItemObj}
+          movingItem={moveItemObj ?? undefined}
+          movingItems={moveItems ?? undefined}
           onSelect={handleMoveSelect}
         />
       )}
@@ -661,8 +776,10 @@ export default function IndustryChildPage() {
         onOpenChange={setMoveConfirmOpen}
         title="Move item"
         description={
-          moveItemObj
-            ? `Move "${moveItemObj.name}" to ${moveTargetLabel}?`
+          (moveItemObj || (moveItems && moveItems.length > 0))
+            ? moveItems && moveItems.length > 1
+              ? `Move ${moveItems.length} items to ${moveTargetLabel}?`
+              : `Move "${(moveItemObj ?? moveItems?.[0])?.name}" to ${moveTargetLabel}?`
             : ""
         }
         confirmLabel="Move"

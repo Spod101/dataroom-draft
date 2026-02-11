@@ -25,9 +25,13 @@ function pathStartsWith(path: DataRoomPath, prefix: DataRoomPath): boolean {
 interface MoveToFolderModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  itemName: string;
+  /** Single item name (when moving one item) */
+  itemName?: string;
   sourcePath: DataRoomPath;
-  movingItem: DataRoomItem;
+  /** Single item - use when moving one item */
+  movingItem?: DataRoomItem;
+  /** Multiple items - use when moving many; takes precedence over movingItem */
+  movingItems?: DataRoomItem[];
   onSelect: (targetPath: DataRoomPath) => void;
 }
 
@@ -37,9 +41,16 @@ export function MoveToFolderModal({
   itemName,
   sourcePath,
   movingItem,
+  movingItems,
   onSelect,
 }: MoveToFolderModalProps) {
   const { state, getFolder } = useDataRoom();
+  const items = React.useMemo(
+    () => (movingItems && movingItems.length > 0 ? movingItems : movingItem ? [movingItem] : []),
+    [movingItems, movingItem]
+  );
+  const singleItem = items.length === 1 ? items[0] : null;
+
   const allFolders = React.useMemo(
     () => getAllFoldersWithPaths(state.rootFolders),
     [state.rootFolders]
@@ -48,12 +59,13 @@ export function MoveToFolderModal({
   const validTargets = React.useMemo(() => {
     const list: { path: DataRoomPath; label: string }[] = [];
     list.push({ path: [], label: "Data Room (root)" });
-    const movingFolderSlug = isFolder(movingItem) ? movingItem.slug : null;
-    const forbiddenPrefix = movingFolderSlug ? [...sourcePath, movingFolderSlug] : null;
+    const forbiddenPrefixes: DataRoomPath[] = items
+      .filter((item): item is import("@/lib/dataroom-types").DataRoomFolder => isFolder(item))
+      .map((f) => [...sourcePath, f.slug]);
 
-    for (const { path, folder } of allFolders) {
+    for (const { path } of allFolders) {
       if (pathEquals(path, sourcePath)) continue;
-      if (forbiddenPrefix && pathStartsWith(path, forbiddenPrefix)) continue;
+      if (forbiddenPrefixes.some((prefix) => pathStartsWith(path, prefix))) continue;
       const parts: string[] = [];
       for (let i = 0; i < path.length; i++) {
         const p = path.slice(0, i + 1);
@@ -63,7 +75,7 @@ export function MoveToFolderModal({
       list.push({ path, label: parts.join(" → ") });
     }
     return list;
-  }, [allFolders, sourcePath, movingItem, getFolder]);
+  }, [allFolders, sourcePath, items, getFolder]);
 
   const handleSelect = (targetPath: DataRoomPath) => {
     onSelect(targetPath);
@@ -76,7 +88,10 @@ export function MoveToFolderModal({
         <DialogHeader>
           <DialogTitle>Move to folder</DialogTitle>
           <DialogDescription>
-            Choose a destination for &quot;{itemName}&quot;. Files will be moved into the selected folder.
+            {items.length === 1
+              ? `Choose a destination for "${itemName ?? singleItem?.name ?? "item"}".`
+              : `Choose a destination for ${items.length} items.`}{" "}
+            Files will be moved into the selected folder.
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto rounded-md border p-1 space-y-0.5">

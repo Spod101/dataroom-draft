@@ -11,6 +11,17 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Trash2Icon, RotateCwIcon } from "lucide-react";
 import { listTrash, restoreFolder, restoreFile, hardDeleteFolder, hardDeleteFile, type TrashSummary } from "@/lib/dataroom-supabase";
 import { useToast } from "@/components/ui/toast";
@@ -19,6 +30,9 @@ export default function TrashPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [trash, setTrash] = React.useState<TrashSummary | null>(null);
+  const [selectedFolderIds, setSelectedFolderIds] = React.useState<Set<string>>(new Set());
+  const [selectedFileIds, setSelectedFileIds] = React.useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
   const { success, error: toastError } = useToast();
 
   const load = React.useCallback(async () => {
@@ -81,6 +95,75 @@ export default function TrashPage() {
   const folders = trash?.folders ?? [];
   const files = trash?.files ?? [];
   const hasItems = folders.length > 0 || files.length > 0;
+  const totalItems = folders.length + files.length;
+  const selectedCount = selectedFolderIds.size + selectedFileIds.size;
+  const allSelected = totalItems > 0 && selectedCount === totalItems;
+  const someSelected = selectedCount > 0;
+
+  const toggleFolder = (id: string) => {
+    setSelectedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleFile = (id: string) => {
+    setSelectedFileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedFolderIds(new Set());
+      setSelectedFileIds(new Set());
+    } else {
+      setSelectedFolderIds(new Set(folders.map((f) => f.id)));
+      setSelectedFileIds(new Set(files.map((f) => f.id)));
+    }
+  };
+  const clearSelection = () => {
+    setSelectedFolderIds(new Set());
+    setSelectedFileIds(new Set());
+  };
+
+  const handleBulkRestore = async () => {
+    try {
+      for (const id of selectedFolderIds) {
+        await restoreFolder(id);
+      }
+      for (const id of selectedFileIds) {
+        await restoreFile(id);
+      }
+      const count = selectedFolderIds.size + selectedFileIds.size;
+      success(count === 1 ? "Item restored" : `${count} items restored`);
+      clearSelection();
+      void load();
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : "Failed to restore");
+    }
+  };
+
+  const handleBulkDeleteForever = async () => {
+    try {
+      for (const id of selectedFolderIds) {
+        await hardDeleteFolder(id);
+      }
+      for (const id of selectedFileIds) {
+        await hardDeleteFile(id);
+      }
+      const count = selectedFolderIds.size + selectedFileIds.size;
+      success(count === 1 ? "Item permanently deleted" : `${count} items permanently deleted`);
+      setBulkDeleteOpen(false);
+      clearSelection();
+      void load();
+    } catch (e) {
+      toastError(e instanceof Error ? e.message : "Failed to delete");
+    }
+  };
 
   return (
     <SidebarInset>
@@ -102,22 +185,66 @@ export default function TrashPage() {
             <Trash2Icon className="h-5 w-5 text-destructive" />
             <h1 className="text-lg font-semibold">Trash</h1>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="flex items-center gap-2"
-            onClick={() => load()}
-            disabled={loading}
-          >
-            <RotateCwIcon className="h-4 w-4" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {someSelected && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex items-center gap-2"
+                  onClick={handleBulkRestore}
+                >
+                  <RotateCwIcon className="h-4 w-4" />
+                  Restore ({selectedCount})
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="flex items-center gap-2"
+                  onClick={() => setBulkDeleteOpen(true)}
+                >
+                  <Trash2Icon className="h-4 w-4" />
+                  Delete forever ({selectedCount})
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearSelection}
+                >
+                  Clear selection
+                </Button>
+              </>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="flex items-center gap-2"
+              onClick={() => load()}
+              disabled={loading}
+            >
+              <RotateCwIcon className="h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         <Card className="border-primary/20 flex-1">
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-3 flex flex-row items-center justify-between gap-2">
             <CardTitle className="text-base">Deleted items</CardTitle>
+            {hasItems && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={toggleSelectAll}
+              >
+                {allSelected ? "Clear selection" : "Select all"}
+              </Button>
+            )}
           </CardHeader>
           <CardContent className="p-0">
             {loading && (
@@ -144,9 +271,16 @@ export default function TrashPage() {
                 {folders.map((folder) => (
                   <div
                     key={`folder-${folder.id}`}
-                    className="flex items-center gap-4 px-6 py-3 hover:bg-accent/40 transition-colors"
+                    className={`flex items-center gap-4 px-6 py-3 hover:bg-accent/40 transition-colors ${selectedFolderIds.has(folder.id) ? "bg-accent/40" : ""}`}
                   >
-                    <div className="w-6 text-primary">
+                    <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedFolderIds.has(folder.id)}
+                        onCheckedChange={() => toggleFolder(folder.id)}
+                        aria-label={`Select ${folder.name}`}
+                      />
+                    </div>
+                    <div className="w-6 text-primary shrink-0">
                       <Trash2Icon className="h-4 w-4" />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -182,9 +316,16 @@ export default function TrashPage() {
                 {files.map((file) => (
                   <div
                     key={`file-${file.id}`}
-                    className="flex items-center gap-4 px-6 py-3 hover:bg-accent/40 transition-colors"
+                    className={`flex items-center gap-4 px-6 py-3 hover:bg-accent/40 transition-colors ${selectedFileIds.has(file.id) ? "bg-accent/40" : ""}`}
                   >
-                    <div className="w-6 text-muted-foreground">
+                    <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selectedFileIds.has(file.id)}
+                        onCheckedChange={() => toggleFile(file.id)}
+                        aria-label={`Select ${file.name}`}
+                      />
+                    </div>
+                    <div className="w-6 text-muted-foreground shrink-0">
                       {/* simple dot for file */}
                       <span className="inline-block h-2 w-2 rounded-full bg-muted-foreground" />
                     </div>
@@ -222,6 +363,24 @@ export default function TrashPage() {
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete forever?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to permanently delete {selectedCount} item{selectedCount !== 1 ? "s" : ""}?
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={handleBulkDeleteForever}>
+              Delete forever
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarInset>
   );
 }

@@ -35,8 +35,12 @@ const getActionStyle = (action: string) => {
       return "bg-orange-100 text-orange-700 border-orange-200";
     case "delete":
       return "bg-red-100 text-red-700 border-red-200";
+    case "permanently deleted":
+      return "bg-red-100 text-red-700 border-red-200";
     case "download":
       return "bg-cyan-100 text-cyan-700 border-cyan-200";
+    case "restore":
+      return "bg-emerald-100 text-emerald-700 border-emerald-200";
     default:
       return "bg-gray-100 text-gray-700 border-gray-200";
   }
@@ -48,13 +52,17 @@ function formatActionLabel(action: string): string {
     if (kind === "upload") return "Upload";
     if (kind === "rename") return "Rename";
     if (kind === "delete") return "Delete";
+    if (kind === "hard_delete") return "Permanently deleted";
     if (kind === "download") return "Download";
+    if (kind === "restore") return "Restore";
   }
   if (action.startsWith("folder.")) {
     const kind = action.slice("folder.".length);
     if (kind === "create") return "Create";
     if (kind === "rename") return "Rename";
     if (kind === "delete") return "Delete";
+    if (kind === "hard_delete") return "Permanently deleted";
+    if (kind === "restore") return "Restore";
   }
   return action;
 }
@@ -146,19 +154,31 @@ export default function AuditPage() {
           const folderName = row.folder_id ? folderMap.get(row.folder_id) : undefined;
           let description = "";
 
-          if (row.target_type === "file" && fileName) {
-            if (row.action === "file.upload") description = `Uploaded "${fileName}"`;
-            else if (row.action === "file.rename") description = `Renamed file "${fileName}"`;
-            else if (row.action === "file.delete") description = `Deleted file "${fileName}"`;
-            else if (row.action === "file.download") description = `Downloaded "${fileName}"`;
-            else description = `${row.action} "${fileName}"`;
-          } else if (row.target_type === "folder" && folderName) {
-            if (row.action === "folder.create") description = `Created folder "${folderName}"`;
-            else if (row.action === "folder.rename") description = `Renamed folder "${folderName}"`;
-            else if (row.action === "folder.delete") description = `Deleted folder "${folderName}"`;
-            else description = `${row.action} "${folderName}"`;
+          const action = row.action as string;
+          if (action === "file.hard_delete") {
+            description = fileName ? `Permanently deleted file "${fileName}"` : "Permanently deleted a file";
+          } else if (action === "folder.hard_delete") {
+            description = folderName ? `Permanently deleted folder "${folderName}"` : "Permanently deleted a folder";
+          } else if (action === "file.upload") {
+            description = fileName ? `Uploaded "${fileName}"` : "Uploaded a file";
+          } else if (action === "file.rename") {
+            description = fileName ? `Renamed file "${fileName}"` : "Renamed a file";
+          } else if (action === "file.delete") {
+            description = fileName ? `Deleted file "${fileName}"` : "Deleted a file";
+          } else if (action === "file.download") {
+            description = fileName ? `Downloaded "${fileName}"` : "Downloaded a file";
+          } else if (action === "folder.create") {
+            description = folderName ? `Created folder "${folderName}"` : "Created a folder";
+          } else if (action === "folder.rename") {
+            description = folderName ? `Renamed folder "${folderName}"` : "Renamed a folder";
+          } else if (action === "folder.delete") {
+            description = folderName ? `Deleted folder "${folderName}"` : "Deleted a folder";
+          } else if (action === "file.restore") {
+            description = fileName ? `Restored file "${fileName}"` : "Restored a file";
+          } else if (action === "folder.restore") {
+            description = folderName ? `Restored folder "${folderName}"` : "Restored a folder";
           } else {
-            description = row.action as string;
+            description = action;
           }
 
           return {
@@ -259,7 +279,7 @@ export default function AuditPage() {
 
         <Card className="border-primary/20 flex-1">
           <CardContent className="p-0">
-            <div className="grid grid-cols-[160px_1fr_120px_2fr] gap-4 px-6 py-3 border-b bg-muted/30 text-sm text-muted-foreground">
+            <div className="grid grid-cols-[160px_1fr_140px_2fr] gap-4 px-6 py-3 border-b bg-muted/30 text-sm text-muted-foreground">
               <div>Date</div>
               <div>Member</div>
               <div>Action</div>
@@ -277,20 +297,20 @@ export default function AuditPage() {
                 filteredLogs.map((log) => (
                   <div
                     key={log.id}
-                    className="grid grid-cols-[160px_1fr_120px_2fr] gap-4 px-6 py-4 hover:bg-accent/50 transition-colors items-center"
+                    className="grid grid-cols-[160px_1fr_140px_2fr] gap-4 px-6 py-4 hover:bg-accent/50 transition-colors items-center"
                   >
                     <div className="text-sm text-muted-foreground">{log.date}</div>
                     <div className="text-sm font-medium">{log.member}</div>
-                    <div>
+                    <div className="min-w-0 py-0.5">
                       <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getActionStyle(
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border whitespace-nowrap ${getActionStyle(
                           log.actionLabel
                         )}`}
                       >
                         {log.actionLabel}
                       </span>
                     </div>
-                    <div className="text-sm">{log.description}</div>
+                    <div className="text-sm min-w-0">{log.description}</div>
                   </div>
                 ))}
             </div>

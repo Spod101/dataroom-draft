@@ -558,9 +558,11 @@ export async function hardDeleteFolder(folderId: string): Promise<void> {
   await assertCanEditFolder(folderId, "permanently delete folders");
   const { error } = await supabase.from("folders").delete().eq("id", folderId);
   if (error) throw new Error(error.message);
+  // Log after delete: use folder_id null (folder no longer exists) and targetId/details for ID
   await logAuditEvent("folder.hard_delete", "folder", {
     targetId: folderId,
-    folderId,
+    folderId: null,
+    details: { deleted_folder_id: folderId },
   });
 }
 
@@ -569,8 +571,10 @@ export async function hardDeleteFile(fileId: string): Promise<void> {
   await assertCanEditFile(fileId, "permanently delete");
   const { error } = await supabase.from("files").delete().eq("id", fileId);
   if (error) throw new Error(error.message);
+  // Log after delete: use file_id null (file no longer exists) and targetId/details for ID
   await logAuditEvent("file.hard_delete", "file", {
     targetId: fileId,
-    fileId,
+    fileId: null,
+    details: { deleted_file_id: fileId },
   });
 }
