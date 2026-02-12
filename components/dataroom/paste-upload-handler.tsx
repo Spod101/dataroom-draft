@@ -32,7 +32,7 @@ interface PasteUploadHandlerProps {
 
 export function PasteUploadHandler({ onUpload, enabled = true }: PasteUploadHandlerProps) {
   const toast = useToast();
-  const { state } = useDataRoom();
+  const { state, cancelUpload } = useDataRoom();
   const [pastedFiles, setPastedFiles] = React.useState<File[]>([]);
   const [showConfirmDialog, setShowConfirmDialog] = React.useState(false);
   const [showCancelDialog, setShowCancelDialog] = React.useState(false);
@@ -90,6 +90,13 @@ export function PasteUploadHandler({ onUpload, enabled = true }: PasteUploadHand
       setShowConfirmDialog(false);
       setPastedFiles([]);
     } catch (e) {
+      // Check if it was a cancellation
+      if (e instanceof Error && e.message === "Upload cancelled") {
+        // Cancellation is handled by the cancel flow, just reset state
+        setIsUploading(false);
+        setUploadStartTime(null);
+        return;
+      }
       toast.error(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setIsUploading(false);
@@ -108,6 +115,7 @@ export function PasteUploadHandler({ onUpload, enabled = true }: PasteUploadHand
   };
 
   const handleConfirmCancel = () => {
+    cancelUpload();
     setShowCancelDialog(false);
     setShowConfirmDialog(false);
     setPastedFiles([]);
@@ -115,9 +123,18 @@ export function PasteUploadHandler({ onUpload, enabled = true }: PasteUploadHand
     setUploadStartTime(null);
   };
 
+  const handleOpenChange = (newOpen: boolean) => {
+    // If trying to close while uploading, show cancel dialog instead
+    if (!newOpen && isUploading) {
+      setShowCancelDialog(true);
+      return;
+    }
+    setShowConfirmDialog(newOpen);
+  };
+
   return (
     <>
-      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+      <Dialog open={showConfirmDialog} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Upload Pasted Files?</DialogTitle>

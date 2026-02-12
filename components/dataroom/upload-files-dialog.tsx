@@ -44,7 +44,7 @@ export function UploadFilesDialog({
   existingNames = new Set(),
   errorMessage,
 }: UploadFilesDialogProps) {
-  const { state } = useDataRoom();
+  const { state, cancelUpload } = useDataRoom();
   const upload = state.upload;
   const uploading = !!upload;
   const [showCancelDialog, setShowCancelDialog] = React.useState(false);
@@ -84,9 +84,18 @@ export function UploadFilesDialog({
     }
   };
 
+  const handleOpenChange = (newOpen: boolean) => {
+    // If trying to close while uploading, show cancel dialog instead
+    if (!newOpen && uploading) {
+      setShowCancelDialog(true);
+      return;
+    }
+    onOpenChange(newOpen);
+  };
+
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Upload files</DialogTitle>
@@ -220,6 +229,7 @@ export function UploadFilesDialog({
           <AlertDialogCancel>Continue Uploading</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => {
+              cancelUpload();
               setShowCancelDialog(false);
               onOpenChange(false);
             }}

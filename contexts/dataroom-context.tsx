@@ -37,6 +37,7 @@ export type UploadProgress = {
   totalBytes: number;
   uploadedBytes: number;
   currentFileName: string | null;
+  abortController: AbortController;
 };
 
 function getFolderAtPath(
@@ -136,7 +137,7 @@ type Action =
   | { type: "MOVE_ITEM"; sourcePath: DataRoomPath; itemId: string; targetPath: DataRoomPath; modifiedBy: string }
   | { type: "SET_SHARING"; path: DataRoomPath; itemId: string; sharing: string; modifiedBy: string }
   | { type: "REORDER_FOLDERS"; path: DataRoomPath; folderIds: string[] }
-  | { type: "UPLOAD_START"; totalFiles: number; totalBytes: number }
+  | { type: "UPLOAD_START"; totalFiles: number; totalBytes: number; abortController: AbortController }
   | { type: "UPLOAD_UPDATE"; completedFiles: number; uploadedBytes: number; currentFileName: string | null }
   | { type: "UPLOAD_END" };
 
@@ -217,6 +218,7 @@ function reducer(state: DataRoomState, action: Action): DataRoomState {
           totalBytes: action.totalBytes,
           uploadedBytes: 0,
           currentFileName: null,
+          abortController: action.abortController,
         },
       };
     case "UPLOAD_UPDATE":
@@ -271,6 +273,7 @@ type DataRoomContextValue = {
   getFolder: (path: DataRoomPath) => DataRoomFolder | null;
   addFolder: (path: DataRoomPath, name: string) => Promise<void>;
   uploadFiles: (path: DataRoomPath, files: File[]) => Promise<void>;
+  cancelUpload: () => void;
   addFiles: (path: DataRoomPath, files: DataRoomFile[]) => void;
   renameItem: (path: DataRoomPath, itemId: string, newName: string) => Promise<void>;
   deleteItem: (path: DataRoomPath, itemId: string) => Promise<void>;
@@ -349,12 +352,21 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
       const folder = getFolderAtPath(state.rootFolders, path);
       if (!folder) throw new Error("Folder not found");
       const totalBytes = files.reduce((sum, f) => sum + (typeof f.size === "number" ? f.size : 0), 0);
-      dispatch({ type: "UPLOAD_START", totalFiles: files.length, totalBytes });
+      const abortController = new AbortController();
+      dispatch({ type: "UPLOAD_START", totalFiles: files.length, totalBytes, abortController });
       const added: DataRoomFile[] = [];
       let completedFiles = 0;
       let uploadedBytes = 0;
+      let cancelled = false;
+      
       try {
         for (const file of files) {
+          // Check if upload was cancelled
+          if (abortController.signal.aborted) {
+            cancelled = true;
+            throw new Error("Upload cancelled");
+          }
+
           const fileSize = typeof file.size === "number" ? file.size : 0;
           const baseBytesForFile = uploadedBytes;
           let estimatedBytesForFile = 0;
@@ -365,6 +377,10 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
             const maxEstimatedForFile = fileSize * 0.9; // cap at 90% until the upload actually finishes
             const tickBytes = maxEstimatedForFile / 20; // ~20 ticks to reach 90%
             interval = setInterval(() => {
+              if (abortController.signal.aborted) {
+                if (interval) clearInterval(interval);
+                return;
+              }
               estimatedBytesForFile = Math.min(
                 maxEstimatedForFile,
                 estimatedBytesForFile + tickBytes
@@ -387,7 +403,20 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
           }
 
           try {
+            // Check again right before upload
+            if (abortController.signal.aborted) {
+              cancelled = true;
+              throw new Error("Upload cancelled");
+            }
+            
             const dataRoomFile = await uploadFileToFolder(folder.id, file);
+            
+            // Check if cancelled while upload was in progress
+            if (abortController.signal.aborted) {
+              cancelled = true;
+              throw new Error("Upload cancelled");
+            }
+            
             added.push(dataRoomFile);
           } finally {
             if (interval) clearInterval(interval);
@@ -413,12 +442,29 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
           dispatch({ type: "SET_ERROR", error: e instanceof Error ? e.message : "Failed to refresh" });
           throw e;
         }
+      } catch (e) {
+        if (cancelled || abortController.signal.aborted) {
+          // Upload was cancelled, clear the state immediately
+          dispatch({ type: "UPLOAD_END" });
+          throw new Error("Upload cancelled");
+        }
+        throw e;
       } finally {
-        dispatch({ type: "UPLOAD_END" });
+        if (!cancelled) {
+          dispatch({ type: "UPLOAD_END" });
+        }
       }
     },
     [state.rootFolders, refresh]
   );
+
+  const cancelUpload = React.useCallback(() => {
+    if (state.upload?.abortController) {
+      state.upload.abortController.abort();
+      // Immediately clear the upload state for better responsiveness
+      dispatch({ type: "UPLOAD_END" });
+    }
+  }, [state.upload]);
 
   const addFiles = React.useCallback((_path: DataRoomPath, _files: DataRoomFile[]) => {
     // In-memory only; used when upload is done elsewhere and we want to show optimistically.
@@ -523,6 +569,7 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     getFolder,
     addFolder,
     uploadFiles,
+    cancelUpload,
     addFiles,
     renameItem,
     deleteItem,

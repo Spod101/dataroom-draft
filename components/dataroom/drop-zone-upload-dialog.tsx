@@ -15,7 +15,7 @@ interface DropZoneUploadDialogProps {
 }
 
 export function DropZoneUploadDialog({ files, open, onOpenChange, onUpload }: DropZoneUploadDialogProps) {
-  const { state } = useDataRoom();
+  const { state, cancelUpload } = useDataRoom();
   const [isUploading, setIsUploading] = React.useState(false);
   const [showCancelDialog, setShowCancelDialog] = React.useState(false);
   const [uploadStartTime, setUploadStartTime] = React.useState<number | null>(null);
@@ -29,6 +29,13 @@ export function DropZoneUploadDialog({ files, open, onOpenChange, onUpload }: Dr
       await onUpload(files);
       onOpenChange(false);
     } catch (error) {
+      // Check if it was a cancellation
+      if (error instanceof Error && error.message === "Upload cancelled") {
+        // Cancellation is handled by the cancel flow, just reset state
+        setIsUploading(false);
+        setUploadStartTime(null);
+        return;
+      }
       console.error("Upload failed:", error);
     } finally {
       setIsUploading(false);
@@ -45,15 +52,25 @@ export function DropZoneUploadDialog({ files, open, onOpenChange, onUpload }: Dr
   };
 
   const handleConfirmCancel = () => {
+    cancelUpload();
     setShowCancelDialog(false);
     setIsUploading(false);
     setUploadStartTime(null);
     onOpenChange(false);
   };
 
+  const handleOpenChange = (newOpen: boolean) => {
+    // If trying to close while uploading, show cancel dialog instead
+    if (!newOpen && isUploading) {
+      setShowCancelDialog(true);
+      return;
+    }
+    onOpenChange(newOpen);
+  };
+
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Upload Files</DialogTitle>
