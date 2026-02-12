@@ -42,6 +42,7 @@ import {
   FolderIcon,
   FileTextIcon,
   PlusIcon,
+  ArrowLeftIcon,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -386,8 +387,16 @@ export default function IndustryChildPage() {
     <SidebarInset>
       <header className="bg-background sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
         <SidebarTrigger className="-ml-1" />
-        <Separator orientation="vertical" className="mr-2 h-4" />
-        <Breadcrumb>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => router.push(`/dataroom/${folderSlug}/${subfolderSlug}/${industrySlug}`)}
+          className="h-8 w-8 hover:bg-primary/10 hover:text-primary"
+          aria-label="Go back"
+        >
+          <ArrowLeftIcon className="h-4 w-4" />
+        </Button>
+        <Breadcrumb className="ml-2 px-3 py-1 rounded-md bg-muted/50">
           <BreadcrumbList>
             <BreadcrumbItem>
               <BreadcrumbLink asChild>
@@ -446,19 +455,21 @@ export default function IndustryChildPage() {
         />
 
         {someSelected && (
-          <div className="flex items-center gap-3 py-2 px-3 rounded-lg bg-primary/5 border border-primary/20">
+          <div className="flex items-center justify-between gap-3 py-2 px-3 rounded-lg bg-primary/5 border border-primary/20">
             <span className="text-sm font-medium">{selectedIds.size} selected</span>
-            <Button variant="outline" size="sm" onClick={openBulkMove}>
-              <FolderIcon className="h-4 w-4 mr-2" />
-              Move
-            </Button>
-            <Button variant="destructive" size="sm" onClick={openBulkDelete}>
-              <TrashIcon className="h-4 w-4 mr-2" />
-              Delete
-            </Button>
-            <Button variant="ghost" size="sm" onClick={clearSelection}>
-              Clear selection
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={openBulkMove}>
+                <FolderIcon className="h-4 w-4 mr-2" />
+                Move
+              </Button>
+              <Button variant="destructive" size="sm" onClick={openBulkDelete}>
+                <TrashIcon className="h-4 w-4 mr-2" />
+                Delete
+              </Button>
+              <Button variant="ghost" size="sm" onClick={clearSelection}>
+                Clear selection
+              </Button>
+            </div>
           </div>
         )}
 
