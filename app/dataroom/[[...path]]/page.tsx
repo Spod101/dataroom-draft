@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -22,7 +21,6 @@ import { ConfirmDialog } from "@/components/dataroom/confirm-dialog";
 import { ShareLinkModal } from "@/components/dataroom/share-link-modal";
 import { InputDialog } from "@/components/dataroom/input-dialog";
 import { MoveToFolderModal } from "@/components/dataroom/move-to-folder-modal";
-import { NewDropdown } from "@/components/dataroom/new-dropdown";
 import { UploadFilesDialog } from "@/components/dataroom/upload-files-dialog";
 import { downloadFile, downloadFolderZip } from "@/lib/dataroom-download";
 import {
@@ -78,16 +76,23 @@ function getItemIcon(item: DataRoomItem, size: "sm" | "lg" = "lg") {
   return <FileTextIcon className={`${sizeClass} text-muted-foreground`} />;
 }
 
-export default function FolderPage() {
+export default function DynamicDataRoomPage() {
   const router = useRouter();
   const params = useParams();
-  const folderSlug = params.folder as string;
-  const path = React.useMemo(() => [folderSlug], [folderSlug]);
+  
+  // path can be undefined (root), a string (single level), or string[] (multiple levels)
+  const pathParam = params.path;
+  const path: DataRoomPath = React.useMemo(() => {
+    if (!pathParam) return [];
+    if (typeof pathParam === "string") return [pathParam];
+    return pathParam;
+  }, [pathParam]);
 
-  const { state, getChildren, getFolder, loadFolderChildren, addFolder, addFiles, uploadFiles, renameItem, deleteItem, moveItem, setSharing } =
+  const { state, getChildren, getFolder, loadFolderChildren, addFolder, uploadFiles, renameItem, deleteItem, moveItem, setSharing } =
     useDataRoom();
   const toast = useToast();
-  const folder = getFolder(path);
+  
+  const folder = path.length > 0 ? getFolder(path) : null;
   const children = getChildren(path);
 
   // Lazy load folder children when navigating into this folder
@@ -121,7 +126,7 @@ export default function FolderPage() {
     [flattenedItems, state.rootFolders, searchValue, fileTypeFilter, dateFilter]
   );
   const folderItemsWithPath = React.useMemo(
-    () => children.map((item) => ({ item, path })),
+    () => children.map((item) => ({ item, path: path.length === 0 ? [item.slug] : [...path, item.slug] })),
     [children, path]
   );
   const filteredFolderItems = React.useMemo(
@@ -140,9 +145,8 @@ export default function FolderPage() {
   const [page, setPage] = React.useState(1);
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
   const paginatedDisplayItems = displayItemsWithPath.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  // Reset to first page only when the user changes search/filters.
+  
   React.useEffect(() => setPage(1), [searchValue, fileTypeFilter, dateFilter]);
-  // Keep current page when data changes; clamp if page becomes invalid.
   React.useEffect(() => setPage((p) => Math.min(Math.max(p, 1), totalPages)), [totalPages]);
 
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
@@ -159,10 +163,6 @@ export default function FolderPage() {
   const [shareAccess, setShareAccess] = React.useState<"view" | "edit">("view");
   const [shareItem, setShareItem] = React.useState<DataRoomItem | null>(null);
   const [shareItemPath, setShareItemPath] = React.useState<DataRoomPath>(path);
-  const [overwriteOpen, setOverwriteOpen] = React.useState(false);
-  const [overwriteName, setOverwriteName] = React.useState("");
-  const [overwriteResolve, setOverwriteResolve] = React.useState<((ok: boolean) => void) | null>(null);
-  const [pendingUploadFiles, setPendingUploadFiles] = React.useState<DataRoomFile[]>([]);
   const [newFolderOpen, setNewFolderOpen] = React.useState(false);
   const [moveOpen, setMoveOpen] = React.useState(false);
   const [moveItemObj, setMoveItemObj] = React.useState<DataRoomItem | null>(null);
@@ -199,7 +199,6 @@ export default function FolderPage() {
     isFolder(item) ? itemPath.slice(0, -1) : itemPath;
 
   const openRename = (item: DataRoomItem, itemPath: DataRoomPath) => {
-    ignoreNextRowClickRef.current = true;
     setRenameItemId(item.id);
     setRenamePath(itemParentPath(item, itemPath));
     setRenameName(item.name);
@@ -225,7 +224,6 @@ export default function FolderPage() {
   };
 
   const openDelete = (item: DataRoomItem, itemPath: DataRoomPath) => {
-    ignoreNextRowClickRef.current = true;
     setDeleteEntries([{ item, path: itemPath }]);
     setDeleteName(item.name);
     setDeleteOpen(true);
@@ -239,7 +237,6 @@ export default function FolderPage() {
   };
 
   const openShare = (item: DataRoomItem, itemPath: DataRoomPath) => {
-    ignoreNextRowClickRef.current = true;
     setShareItemPath(itemParentPath(item, itemPath));
     const base = typeof window !== "undefined" ? window.location.origin : "";
     const pathPrefix = itemPath.length ? itemPath.join("/") : "";
@@ -275,47 +272,17 @@ export default function FolderPage() {
         })
         .catch((e) => {
           const msg = e instanceof Error ? e.message : "Upload failed";
-          // Show permission errors in the modal, others as toasts.
           if (msg.toLowerCase().includes("don't have permission") || msg.toLowerCase().includes("do not have permission")) {
             setUploadError(msg);
           } else {
             toast.error(msg);
           }
         });
-    } else {
-      addFiles(path, files);
-      setUploadDialogOpen(false);
     }
   };
 
-  const handleOverwriteWarning = (
-    name: string,
-    files: DataRoomFile[],
-    resolve: (ok: boolean) => void
-  ) => {
-    setOverwriteName(name);
-    setPendingUploadFiles(files);
-    setOverwriteResolve(() => resolve);
-    setOverwriteOpen(true);
-  };
-
-  const confirmOverwrite = () => {
-    overwriteResolve?.(true);
-    addFiles(path, pendingUploadFiles);
-    setOverwriteOpen(false);
-    setOverwriteResolve(null);
-    setPendingUploadFiles([]);
-  };
-
-  const cancelOverwrite = () => {
-    overwriteResolve?.(false);
-    setOverwriteOpen(false);
-    setOverwriteResolve(null);
-    setPendingUploadFiles([]);
-  };
-
   const handleFolderDownload = () => {
-    const name = folder?.name ?? folderSlug ?? "Folder";
+    const name = folder?.name ?? (path.length > 0 ? path[path.length - 1] : "Data Room");
     downloadFolderZip(path, state.rootFolders, name)
       .then(() => toast.success(`Downloaded "${name}" as ZIP`))
       .catch((e) => toast.error(e instanceof Error ? e.message : "Download failed"));
@@ -332,7 +299,6 @@ export default function FolderPage() {
   };
 
   const openMove = (item: DataRoomItem, itemPath: DataRoomPath) => {
-    ignoreNextRowClickRef.current = true;
     setMoveItemObj(item);
     setMoveItemPath(itemParentPath(item, itemPath));
     setMoveItems(null);
@@ -343,24 +309,11 @@ export default function FolderPage() {
     () => displayItemsWithPath.filter(({ item }) => selectedIds.has(item.id)),
     [displayItemsWithPath, selectedIds]
   );
-  const selectedItems = React.useMemo(
-    () => selectedItemsWithPath.map(({ item }) => item),
-    [selectedItemsWithPath]
-  );
+  
   const allSelected = displayItemsWithPath.length > 0 && selectedIds.size === displayItemsWithPath.length;
   const someSelected = selectedIds.size > 0;
 
-  const toggleSelect = (id: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-  const toggleSelectAll = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
+  const toggleSelectAll = () => {
     if (allSelected) setSelectedIds(new Set());
     else setSelectedIds(new Set(displayItemsWithPath.map(({ item }) => item.id)));
   };
@@ -372,6 +325,7 @@ export default function FolderPage() {
     setMoveItems(selectedItemsWithPath);
     setMoveOpen(true);
   };
+  
   const openBulkDelete = () => {
     if (selectedItemsWithPath.length === 0) return;
     setDeleteEntries(selectedItemsWithPath);
@@ -410,16 +364,6 @@ export default function FolderPage() {
     setMoveItemObj(null);
     setMoveItems(null);
   };
-
-  if (!folder) {
-    return (
-      <SidebarInset>
-        <div className="flex items-center justify-center h-full">
-          <p className="text-muted-foreground">Folder not found</p>
-        </div>
-      </SidebarInset>
-    );
-  }
 
   const navigateTo = (item: DataRoomItem, itemPath: DataRoomPath) => {
     if (isFolder(item)) {
@@ -482,30 +426,77 @@ export default function FolderPage() {
     }
   };
 
+  // Build breadcrumbs dynamically
+  const breadcrumbs = React.useMemo(() => {
+    const crumbs: { name: string; href: string; isLast: boolean }[] = [];
+    
+    for (let i = 0; i < path.length; i++) {
+      const partialPath = path.slice(0, i + 1);
+      const folderAtPath = getFolder(partialPath);
+      const name = folderAtPath?.name ?? path[i];
+      const href = "/dataroom/" + partialPath.join("/");
+      crumbs.push({ name, href, isLast: i === path.length - 1 });
+    }
+    
+    return crumbs;
+  }, [path, getFolder]);
+
+  // Get parent path for back button
+  const parentPath = path.length > 0 ? path.slice(0, -1) : null;
+  const backHref = parentPath ? (parentPath.length > 0 ? `/dataroom/${parentPath.join("/")}` : "/dataroom") : null;
+
+  if (path.length > 0 && !folder) {
+    return (
+      <SidebarInset>
+        <div className="flex items-center justify-center h-full">
+          <p className="text-muted-foreground">Folder not found</p>
+        </div>
+      </SidebarInset>
+    );
+  }
+
+  const currentFolderName = folder?.name ?? "Data Room";
+
   return (
     <SidebarInset>
       <header className="bg-background sticky top-0 z-10 flex h-16 shrink-0 items-center gap-2 border-b px-4">
         <SidebarTrigger className="-ml-1" />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => router.push("/dataroom")}
-          className="h-8 w-8 hover:bg-primary/10 hover:text-primary"
-          aria-label="Go back"
-        >
-          <ArrowLeftIcon className="h-4 w-4" />
-        </Button>
+        {backHref && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => router.push(backHref)}
+            className="h-8 w-8 hover:bg-primary/10 hover:text-primary"
+            aria-label="Go back"
+          >
+            <ArrowLeftIcon className="h-4 w-4" />
+          </Button>
+        )}
         <Breadcrumb className="ml-2 px-3 py-1 rounded-md bg-muted/50">
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link href="/dataroom">Data Room</Link>
-              </BreadcrumbLink>
+              {path.length === 0 ? (
+                <BreadcrumbPage>Data Room</BreadcrumbPage>
+              ) : (
+                <BreadcrumbLink asChild>
+                  <Link href="/dataroom">Data Room</Link>
+                </BreadcrumbLink>
+              )}
             </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem>
-              <BreadcrumbPage>{folder.name}</BreadcrumbPage>
-            </BreadcrumbItem>
+            {breadcrumbs.map((crumb, index) => (
+              <React.Fragment key={index}>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  {crumb.isLast ? (
+                    <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
+                  ) : (
+                    <BreadcrumbLink asChild>
+                      <Link href={crumb.href}>{crumb.name}</Link>
+                    </BreadcrumbLink>
+                  )}
+                </BreadcrumbItem>
+              </React.Fragment>
+            ))}
           </BreadcrumbList>
         </Breadcrumb>
       </header>
@@ -521,7 +512,6 @@ export default function FolderPage() {
         onDragOver={handleDragOver}
         onDrop={handleDrop}
       >
-        {/* Drop zone overlay */}
         {isDragOver && (
           <div className="absolute inset-0 z-50 bg-primary/10 backdrop-blur-sm border-4 border-dashed border-primary/50 flex items-center justify-center pointer-events-none">
             <div className="bg-background/95 rounded-lg shadow-lg p-8 text-center">
@@ -541,10 +531,17 @@ export default function FolderPage() {
                 </svg>
               </div>
               <p className="text-lg font-semibold text-primary">Drop files to upload</p>
-              <p className="text-sm text-muted-foreground mt-2">Release to upload to {folder?.name || "this folder"}</p>
+              <p className="text-sm text-muted-foreground mt-2">Release to upload to {currentFolderName}</p>
             </div>
           </div>
         )}
+        
+        {state.error && (
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+            {state.error}
+          </div>
+        )}
+        
         <DataRoomControls
           viewMode={viewMode}
           onViewModeChange={setViewMode}
@@ -565,7 +562,6 @@ export default function FolderPage() {
           open={uploadDialogOpen}
           onOpenChange={setUploadDialogOpen}
           onFiles={handleUpload}
-          onReplaceWarning={handleOverwriteWarning}
           existingNames={existingFileNames}
           errorMessage={uploadError}
         />
@@ -591,14 +587,14 @@ export default function FolderPage() {
 
         <div className="flex-1">
           {state.loading ? (
-            viewMode === "list" ? (
+            viewMode === "list" || hasActiveSearchOrFilter ? (
               <Card className="border-primary/20">
                 <TableSkeleton rows={8} showLocationColumn={showLocationColumn} showCheckbox={true} />
               </Card>
             ) : (
-              <GridSkeleton items={8} />
+              <GridSkeleton items={6} />
             )
-          ) : viewMode === "list" ? (
+          ) : viewMode === "list" || hasActiveSearchOrFilter ? (
             <Card className="border-primary/20">
               <Table>
                 <TableHeader>
@@ -667,7 +663,7 @@ export default function FolderPage() {
                       </TableCell>
                       <TableCell>
                         <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenuTrigger asChild onClick={(e) => { e.stopPropagation(); ignoreNextRowClickRef.current = true; }}>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -752,8 +748,7 @@ export default function FolderPage() {
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {paginatedDisplayItems.map(({ item, path: rowPath }) =>
-                isFolder(item) ? (
+                {paginatedDisplayItems.map(({ item, path: rowPath }) => (
                   <Card
                     key={item.id}
                     className={`group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full ${selectedIds.has(item.id) ? "ring-2 ring-primary" : ""}`}
@@ -784,94 +779,7 @@ export default function FolderPage() {
                           {getItemIcon(item)}
                         </div>
                         <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => e.preventDefault()}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
-                            >
-                              <MoreVerticalIcon className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openRename(item, rowPath); }}
-                            >
-                              <PencilIcon className="h-4 w-4 mr-2" />
-                              Rename
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openShare(item, rowPath); }}
-                            >
-                              <LinkIconLucide className="h-4 w-4 mr-2" />
-                              Copy Link
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openMove(item, rowPath); }}
-                            >
-                              <FolderIcon className="h-4 w-4 mr-2" />
-                              Move to...
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-destructive/10 focus:text-destructive"
-                              onSelect={(e) => { e.preventDefault(); openDelete(item, rowPath); }}
-                            >
-                              <TrashIcon className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                      <div className="mt-auto">
-                        <h3 className="font-semibold text-base mb-2 group-hover:text-primary transition-colors">
-                          {item.name}
-                        </h3>
-                        {showLocationColumn && (
-                          <p className="text-xs text-muted-foreground truncate">
-                            {getLocationLabel(rowPath, state.rootFolders)}
-                          </p>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <Card
-                    key={item.id}
-                    className={`group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full ${selectedIds.has(item.id) ? "ring-2 ring-primary" : ""}`}
-                    onClick={() => {
-                      if (ignoreNextRowClickRef.current) {
-                        ignoreNextRowClickRef.current = false;
-                        return;
-                      }
-                      if (isFile(item)) {
-                        setPreviewFile(item);
-                        setPreviewOpen(true);
-                      }
-                    }}
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <CardContent className="p-6 h-full flex flex-col relative">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={selectedIds.has(item.id)}
-                            onCheckedChange={(checked) =>
-                              setSelectedIds((prev) => {
-                                const next = new Set(prev);
-                                if (checked) next.add(item.id);
-                                else next.delete(item.id);
-                                return next;
-                              })
-                            }
-                            aria-label={`Select ${item.name}`}
-                          />
-                          {getItemIcon(item)}
-                        </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
+                          <DropdownMenuTrigger asChild onClick={(e) => { e.preventDefault(); e.stopPropagation(); ignoreNextRowClickRef.current = true; }}>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -929,40 +837,36 @@ export default function FolderPage() {
                         </DropdownMenu>
                       </div>
                       <div className="mt-auto">
-                        <h3 className="font-semibold text-base mb-1 group-hover:text-primary transition-colors">
+                        <h3 className="font-semibold text-base mb-2 group-hover:text-primary transition-colors">
                           {item.name}
                         </h3>
-                        {showLocationColumn && (
-                          <p className="text-xs text-muted-foreground truncate">
-                            {getLocationLabel(rowPath, state.rootFolders)}
-                          </p>
-                        )}
                         {item.description && (
                           <p className="text-xs text-muted-foreground">{item.description}</p>
                         )}
                       </div>
                     </CardContent>
                   </Card>
-                )
-              )}
-              {!hasActiveSearchOrFilter && (
-                <Card
-                  className="group hover:shadow-lg hover:shadow-primary/20 hover:border-primary transition-all cursor-pointer relative overflow-hidden border-2 border-dashed border-primary/40 bg-primary/5"
-                  onClick={() => setNewFolderOpen(true)}
-                >
-                  <CardContent className="p-6 h-full flex flex-col items-center justify-center min-h-[180px]">
-                    <div className="flex flex-col items-center gap-3">
-                      <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 group-hover:scale-110 transition-all">
-                        <PlusIcon className="h-8 w-8 text-primary" />
+                ))}
+                
+                {!hasActiveSearchOrFilter && (
+                  <Card
+                    className="group hover:shadow-lg hover:shadow-primary/20 hover:border-primary transition-all cursor-pointer relative overflow-hidden border-2 border-dashed border-primary/40 bg-primary/5"
+                    onClick={() => setNewFolderOpen(true)}
+                  >
+                    <CardContent className="p-6 h-full flex flex-col items-center justify-center min-h-[180px]">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 group-hover:scale-110 transition-all">
+                          <PlusIcon className="h-8 w-8 text-primary" />
+                        </div>
+                        <div className="text-center">
+                          <h3 className="font-semibold text-lg mb-1 text-primary">New Folder</h3>
+                          <p className="text-sm text-muted-foreground">Create a new folder</p>
+                        </div>
                       </div>
-                      <div className="text-center">
-                        <h3 className="font-semibold text-lg mb-1 text-primary">New Folder</h3>
-                        <p className="text-sm text-muted-foreground">Create a subfolder here</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
               {totalPages > 1 && (
                 <TablePagination
                   currentPage={page}
@@ -972,7 +876,6 @@ export default function FolderPage() {
                 />
               )}
             </div>
-            </div>
           )}
         </div>
       </div>
@@ -981,7 +884,7 @@ export default function FolderPage() {
         open={newFolderOpen}
         onOpenChange={setNewFolderOpen}
         title="New Folder"
-        description="Create a new subfolder inside this folder."
+        description={path.length === 0 ? "Create a new folder in the Data Room." : "Create a new subfolder."}
         label="Folder name"
         placeholder="Enter folder name"
         submitLabel="Create"
@@ -1009,16 +912,6 @@ export default function FolderPage() {
         cancelLabel="Cancel"
         variant="destructive"
         onConfirm={handleDelete}
-      />
-
-      <ConfirmDialog
-        open={overwriteOpen}
-        onOpenChange={(open) => !open && cancelOverwrite()}
-        title="Overwrite file?"
-        description={`A file named "${overwriteName}" already exists. Do you want to replace it with the new version?`}
-        confirmLabel="Overwrite"
-        cancelLabel="Cancel"
-        onConfirm={confirmOverwrite}
       />
 
       <ShareLinkModal
@@ -1060,13 +953,11 @@ export default function FolderPage() {
         onConfirm={handleMoveConfirm}
       />
 
-      {/* Paste to upload handler */}
       <PasteUploadHandler
         onUpload={(files) => uploadFiles(path, files)}
         enabled={!hasActiveSearchOrFilter}
       />
 
-      {/* Drop zone upload dialog */}
       <DropZoneUploadDialog
         files={droppedFiles}
         open={dropDialogOpen}
