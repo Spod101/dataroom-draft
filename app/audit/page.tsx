@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -15,6 +14,7 @@ import { SearchBar } from "@/components/dataroom/search-bar";
 import { FilterSelect } from "@/components/dataroom/filter-select";
 import { DownloadButton } from "@/components/dataroom/download-button";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { generateAuditPDF } from "@/lib/audit-pdf-export";
 
 const PAGE_SIZE = 10;
 import { ChevronDownIcon } from "lucide-react";
@@ -24,10 +24,29 @@ import { useAuth } from "@/contexts/auth-context";
 type AuditDisplayRow = {
   id: string;
   date: string;
+  createdAt: string;
   member: string;
   actionLabel: string;
   description: string;
 };
+
+type PeriodFilterValue = "last_24h" | "last_7d" | "last_30d" | "last_90d" | "all";
+
+function getPeriodLabel(value: PeriodFilterValue): string {
+  switch (value) {
+    case "last_24h":
+      return "Last 24 hours";
+    case "last_7d":
+      return "Last 7 days";
+    case "last_30d":
+      return "Last 30 days";
+    case "last_90d":
+      return "Last 90 days";
+    case "all":
+    default:
+      return "All time";
+  }
+}
 
 const getActionStyle = (action: string) => {
   switch (action.toLowerCase()) {
@@ -78,7 +97,9 @@ export default function AuditPage() {
   const [searchTerm, setSearchTerm] = React.useState("");
   const [memberFilter, setMemberFilter] = React.useState("all");
   const [actionFilter, setActionFilter] = React.useState("all");
-  const [dateRange] = React.useState("Last 30 days");
+  const [periodFilter, setPeriodFilter] = React.useState<PeriodFilterValue>("last_30d");
+  const [startDate, setStartDate] = React.useState<string>("");
+  const [endDate, setEndDate] = React.useState<string>("");
 
   const [rows, setRows] = React.useState<AuditDisplayRow[]>([]);
   const [members, setMembers] = React.useState<string[]>([]);
@@ -223,6 +244,7 @@ export default function AuditPage() {
           return {
             id: row.id as string,
             date: new Date(row.created_at as string).toLocaleString(),
+            createdAt: row.created_at as string,
             member,
             actionLabel,
             description,
@@ -243,6 +265,51 @@ export default function AuditPage() {
   }, []);
 
   const filteredLogs = rows.filter((log) => {
+    const createdAt = new Date(log.createdAt);
+    const now = new Date();
+    let matchesPeriod = true;
+
+    if (startDate || endDate) {
+      const from = startDate ? new Date(startDate) : null;
+      const to = endDate ? new Date(endDate) : null;
+
+      if (from && createdAt < from) {
+        matchesPeriod = false;
+      }
+      if (to) {
+        const endOfDay = new Date(to);
+        endOfDay.setHours(23, 59, 59, 999);
+        if (createdAt > endOfDay) {
+          matchesPeriod = false;
+        }
+      }
+    } else {
+      let fromDate: Date | null = null;
+
+      switch (periodFilter) {
+        case "last_24h": {
+          fromDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+          break;
+        }
+        case "last_7d": {
+          fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        }
+        case "last_30d": {
+          fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+        }
+        case "last_90d": {
+          fromDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+          break;
+        }
+        case "all":
+        default:
+          fromDate = null;
+      }
+
+      matchesPeriod = !fromDate || createdAt >= fromDate;
+    }
     const matchesSearch =
       searchTerm === "" ||
       log.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -252,16 +319,46 @@ export default function AuditPage() {
     const matchesAction =
       actionFilter === "all" || log.actionLabel.toLowerCase() === actionFilter.toLowerCase();
 
-    return matchesSearch && matchesMember && matchesAction;
+    return matchesSearch && matchesMember && matchesAction && matchesPeriod;
   });
 
   const [page, setPage] = React.useState(1);
   const totalPages = Math.max(1, Math.ceil(filteredLogs.length / PAGE_SIZE));
   const paginatedLogs = filteredLogs.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   // Reset to first page only when the user changes filters/search.
-  React.useEffect(() => setPage(1), [searchTerm, memberFilter, actionFilter]);
+  React.useEffect(
+    () => setPage(1),
+    [searchTerm, memberFilter, actionFilter, periodFilter, startDate, endDate]
+  );
   // Keep current page when data changes; clamp if page becomes invalid.
   React.useEffect(() => setPage((p) => Math.min(Math.max(p, 1), totalPages)), [totalPages]);
+
+  const dateRangeLabel = React.useMemo(() => {
+    if (startDate || endDate) {
+      if (startDate && endDate) {
+        return `From ${startDate} to ${endDate}`;
+      }
+      if (startDate) {
+        return `From ${startDate}`;
+      }
+      return `Until ${endDate}`;
+    }
+    return getPeriodLabel(periodFilter);
+  }, [startDate, endDate, periodFilter]);
+
+  // Handle PDF download
+  const handleDownloadPDF = React.useCallback(() => {
+    generateAuditPDF({
+      logs: filteredLogs,
+      filters: {
+        searchTerm,
+        memberFilter: memberFilter !== "all" ? memberFilter : undefined,
+        actionFilter: actionFilter !== "all" ? actionFilter : undefined,
+        dateRange: dateRangeLabel,
+      },
+      organizationName: "Data Room", // You can customize this or get it from context
+    });
+  }, [filteredLogs, searchTerm, memberFilter, actionFilter, dateRangeLabel]);
 
   // Show access denied for non-admins
   if (!authLoading && !isAdmin) {
@@ -322,20 +419,42 @@ export default function AuditPage() {
               ]}
             />
 
+            <FilterSelect
+              label="Period"
+              value={periodFilter}
+              onValueChange={(value) => setPeriodFilter(value as PeriodFilterValue)}
+              width="w-[150px]"
+              options={[
+                { id: "last_24h", name: "Last 24 hours" },
+                { id: "last_7d", name: "Last 7 days" },
+                { id: "last_30d", name: "Last 30 days" },
+                { id: "last_90d", name: "Last 90 days" },
+                { id: "all", name: "All time" },
+              ]}
+            />
+
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Period</span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 gap-2 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary hover:border-primary/50"
-              >
-                {dateRange}
-                <ChevronDownIcon className="h-4 w-4" />
-              </Button>
+              <span className="text-sm text-muted-foreground">From</span>
+              <input
+                type="date"
+                className="h-9 rounded-lg border border-primary/20 bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/40"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">To</span>
+              <input
+                type="date"
+                className="h-9 rounded-lg border border-primary/20 bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/40"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
             </div>
 
             <div className="ml-auto">
-              <DownloadButton showDropdown />
+              <DownloadButton onClick={handleDownloadPDF} />
             </div>
           </div>
         </div>

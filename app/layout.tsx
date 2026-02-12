@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ToastProvider } from "@/components/ui/toast";
 import { AppShell } from "@/components/app-shell";
+import { PerformancePatch } from "@/components/performance-patch";
 
 const roboto = Roboto({subsets:['latin'],variable:'--font-sans'});
 
@@ -36,6 +37,7 @@ export default function RootLayout({
         <ThemeProvider defaultTheme="light" storageKey="dataroom-theme">
           <TooltipProvider>
             <ToastProvider>
+              <PerformancePatch />
               <AppShell>{children}</AppShell>
             </ToastProvider>
           </TooltipProvider>
