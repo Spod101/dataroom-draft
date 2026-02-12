@@ -121,6 +121,17 @@ export default function DynamicDataRoomPage() {
     }
   }, [folder, state.loadedFolderIds, loadFolderChildren]);
 
+  // Timeout for invalid/missing folders – show error instead of endless loading
+  const [folderLoadTimeout, setFolderLoadTimeout] = React.useState(false);
+  React.useEffect(() => {
+    if (path.length === 0 || folder) {
+      setFolderLoadTimeout(false);
+      return;
+    }
+    const t = setTimeout(() => setFolderLoadTimeout(true), 8000);
+    return () => clearTimeout(t);
+  }, [path, folder]);
+
   const [searchValue, setSearchValue] = React.useState("");
   const [fileTypeFilter, setFileTypeFilter] = React.useState("all");
   const [dateFilter, setDateFilter] = React.useState("");
@@ -482,7 +493,18 @@ export default function DynamicDataRoomPage() {
   const backHref = parentPath ? (parentPath.length > 0 ? `/dataroom/${parentPath.join("/")}` : "/dataroom") : null;
 
   if (path.length > 0 && !folder) {
-    // Show loading state while folders are being lazy loaded
+    if (folderLoadTimeout) {
+      return (
+        <SidebarInset>
+          <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
+            <p className="text-muted-foreground text-center">Folder not found or loading failed.</p>
+            <Button variant="outline" onClick={() => router.push("/dataroom")}>
+              Back to Data Room
+            </Button>
+          </div>
+        </SidebarInset>
+      );
+    }
     return (
       <SidebarInset>
         <div className="flex flex-col items-center justify-center h-full gap-4">

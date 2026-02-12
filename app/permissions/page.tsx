@@ -135,7 +135,7 @@ export default function PermissionsPage() {
   const [addUserError, setAddUserError] = React.useState<string | null>(null);
   const [addingUser, setAddingUser] = React.useState(false);
 
-  // Load users from DB
+  // Load users from DB (only on mount – selectedUser is set here, not as trigger)
   React.useEffect(() => {
     let cancelled = false;
     const loadUsers = async () => {
@@ -151,9 +151,7 @@ export default function PermissionsPage() {
       } else {
         const mapped = data as PermissionUser[];
         setUsers(mapped);
-        if (!selectedUser && mapped.length > 0) {
-          setSelectedUser(mapped[0]);
-        }
+        setSelectedUser((prev) => (prev ? prev : mapped.length > 0 ? mapped[0] : null));
       }
       setLoadingUsers(false);
     };
@@ -161,7 +159,7 @@ export default function PermissionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedUser]);
+  }, []);
 
   // Load folder/file tree from DB
   React.useEffect(() => {

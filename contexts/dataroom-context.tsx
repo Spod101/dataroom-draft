@@ -310,9 +310,12 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // Use ref to avoid loadFolderChildren changing when loadedFolderIds changes (prevents effect cascade)
+  const loadedFolderIdsRef = React.useRef(state.loadedFolderIds);
+  loadedFolderIdsRef.current = state.loadedFolderIds;
+
   const loadFolderChildren = React.useCallback(async (folderId: string) => {
-    // Don't reload if already loaded
-    if (state.loadedFolderIds.has(folderId)) return;
+    if (loadedFolderIdsRef.current.has(folderId)) return;
 
     try {
       const { folders, files } = await fetchFolderChildren(folderId);
@@ -320,7 +323,7 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       dispatch({ type: "SET_ERROR", error: e instanceof Error ? e.message : "Failed to load folder" });
     }
-  }, [state.loadedFolderIds]);
+  }, []);
 
   React.useEffect(() => {
     refresh();

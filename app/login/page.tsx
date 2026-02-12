@@ -62,7 +62,6 @@ export default function LoginPage() {
     
     setLoading(false);
     router.push(redirect);
-    router.refresh();
   }
 
   async function handleResendConfirmation() {

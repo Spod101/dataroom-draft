@@ -76,33 +76,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   React.useEffect(() => {
     let mounted = true;
+    let initDone = false;
 
     const init = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!mounted) return;
-      if (!session?.user) {
-        setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
-        return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!mounted) return;
+        if (!session?.user) {
+          initDone = true;
+          setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
+          return;
+        }
+
+        const profile = await fetchProfile(session.user.id);
+        const sessions = await fetchSessions(session.user.id);
+        if (!mounted) return;
+
+        const deviceInfo = getDeviceInfo();
+        const existingSession = sessions.find(s => s.device_info === deviceInfo);
+        initDone = true;
+        setState({
+          user: { id: session.user.id, email: session.user.email ?? "" },
+          profile,
+          loading: false,
+          currentSession: existingSession || null,
+          sessions,
+        });
+      } catch {
+        if (mounted && !initDone) {
+          initDone = true;
+          setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
+        }
       }
-
-      const profile = await fetchProfile(session.user.id);
-      const sessions = await fetchSessions(session.user.id);
-      
-      // Find existing session for this device instead of creating new one
-      const deviceInfo = getDeviceInfo();
-      const existingSession = sessions.find(s => s.device_info === deviceInfo);
-
-      if (!mounted) return;
-      setState({
-        user: { id: session.user.id, email: session.user.email ?? "" },
-        profile,
-        loading: false,
-        currentSession: existingSession || null,
-        sessions,
-      });
     };
 
     init();
+
+    const timeout = setTimeout(() => {
+      if (mounted && !initDone) {
+        initDone = true;
+        setState((prev) => (prev.loading ? { ...prev, loading: false } : prev));
+      }
+    }, 10000);
 
     const {
       data: { subscription },
@@ -139,6 +154,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mounted = false;
+      clearTimeout(timeout);
       subscription.unsubscribe();
     };
   }, [fetchProfile, fetchSessions]);

@@ -100,7 +100,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const handleSignOut = async () => {
     await signOut()
     router.push("/login")
-    router.refresh()
   }
 
   const isActive = (url: string) => {
