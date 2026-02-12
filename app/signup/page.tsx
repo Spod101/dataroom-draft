@@ -37,7 +37,12 @@ export default function SignUpPage() {
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      options: { emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/` },
+      options: { 
+        emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/`,
+        data: {
+          name: name.trim() || email.trim().split("@")[0],
+        }
+      },
     });
 
     if (authError) {
@@ -46,19 +51,6 @@ export default function SignUpPage() {
       return;
     }
 
-    if (authData.user?.email) {
-      const { error: profileError } = await supabase.from("users").insert({
-        id: authData.user.id,
-        name: name.trim() || email.trim().split("@")[0],
-        email: authData.user.email,
-        role: "user",
-      });
-      if (profileError) {
-        setError(profileError.message);
-        setLoading(false);
-        return;
-      }
-    }
 
     setLoading(false);
     router.push("/");
