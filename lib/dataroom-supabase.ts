@@ -753,13 +753,88 @@ export async function updateFolderOrder(updates: Array<{ id: string; orderIndex:
   if (failed?.error) throw new Error(failed.error.message);
 }
 
+/** Move file to a different folder. */
+export async function moveFileToFolder(
+  fileId: string,
+  newFolderId: string
+): Promise<void> {
+  // Check permission to edit the file being moved
+  await assertCanEditFile(fileId, "move");
+  
+  // Check permission to edit the destination folder
+  await assertCanEditFolder(newFolderId, "move files into");
+  
+  // Get current file info (including old folder)
+  const { data: fileData, error: fileError } = await supabase
+    .from("files")
+    .select("name, folder_id")
+    .eq("id", fileId)
+    .eq("is_deleted", false)
+    .maybeSingle();
+  
+  if (fileError || !fileData) throw new Error("File not found");
+  
+  const oldFolderId = (fileData as { folder_id: string }).folder_id;
+  const fileName = (fileData as { name: string }).name;
+  
+  // Get old folder name
+  const { data: oldFolderData } = await supabase
+    .from("folders")
+    .select("name")
+    .eq("id", oldFolderId)
+    .maybeSingle();
+  const oldFolderName = oldFolderData ? (oldFolderData as { name: string }).name : "Unknown";
+  
+  // Get new folder name
+  const { data: newFolderData, error: newFolderError } = await supabase
+    .from("folders")
+    .select("name")
+    .eq("id", newFolderId)
+    .eq("is_deleted", false)
+    .maybeSingle();
+  
+  if (newFolderError || !newFolderData) throw new Error("Target folder not found");
+  const newFolderName = (newFolderData as { name: string }).name;
+  
+  const modifiedBy = await getCurrentUserId();
+  const { error } = await supabase
+    .from("files")
+    .update({
+      folder_id: newFolderId,
+      last_modified: new Date().toISOString(),
+      modified_by: modifiedBy,
+    })
+    .eq("id", fileId);
+    
+  if (error) throw new Error(error.message);
+  
+  await logAuditEvent("file.move", "file", {
+    targetId: fileId,
+    fileId,
+    details: {
+      fileName,
+      oldFolderId,
+      oldFolderName,
+      newFolderId,
+      newFolderName,
+      description: `Moved "${fileName}" from "${oldFolderName}" to "${newFolderName}"`,
+    },
+  });
+}
+
 /** Move folder to a different parent (null = root). */
 export async function moveFolderToParent(
   folderId: string,
   newParentId: string | null,
   orderIndex: number
 ): Promise<void> {
+  // Check permission to edit the folder being moved
   await assertCanEditFolder(folderId, "move folders");
+  
+  // Check permission to edit the destination folder (if not root)
+  if (newParentId) {
+    await assertCanEditFolder(newParentId, "move folders into");
+  }
   
   // Get current folder info (including old parent)
   const { data: folderData, error: folderError } = await supabase
@@ -801,7 +876,16 @@ export async function moveFolderToParent(
   }
   
   const modifiedBy = await getCurrentUserId();
-  const { error } = await supabase
+  
+  console.log("Attempting to move folder:", {
+    folderId,
+    oldParentId,
+    newParentId,
+    orderIndex,
+    modifiedBy
+  });
+  
+  const { data: updateResult, error } = await supabase
     .from("folders")
     .update({
       parent_folder_id: newParentId,
@@ -809,9 +893,20 @@ export async function moveFolderToParent(
       last_modified: new Date().toISOString(),
       modified_by: modifiedBy,
     })
-    .eq("id", folderId);
+    .eq("id", folderId)
+    .select();
     
-  if (error) throw new Error(error.message);
+  console.log("Folder move result:", { updateResult, error });
+    
+  if (error) {
+    console.error("Folder move error:", error);
+    throw new Error(error.message);
+  }
+  
+  if (!updateResult || updateResult.length === 0) {
+    console.error("No rows updated - folder might not exist or RLS policy blocked the update");
+    throw new Error("Failed to update folder - no rows affected");
+  }
   
   await logAuditEvent("folder.move", "folder", {
     targetId: folderId,

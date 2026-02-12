@@ -58,7 +58,13 @@ export function MoveToFolderModal({
 
   const validTargets = React.useMemo(() => {
     const list: { path: DataRoomPath; label: string }[] = [];
-    list.push({ path: [], label: "Data Room (root)" });
+    
+    // Only allow root for folders (files must be in a folder)
+    const hasFiles = items.some((item) => !isFolder(item));
+    if (!hasFiles) {
+      list.push({ path: [], label: "Data Room (root)" });
+    }
+    
     const forbiddenPrefixes: DataRoomPath[] = items
       .filter((item): item is import("@/lib/dataroom-types").DataRoomFolder => isFolder(item))
       .map((f) => [...sourcePath, f.slug]);

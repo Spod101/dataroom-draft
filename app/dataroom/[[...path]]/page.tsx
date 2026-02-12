@@ -95,7 +95,26 @@ export default function DynamicDataRoomPage() {
   const folder = path.length > 0 ? getFolder(path) : null;
   const children = getChildren(path);
 
-  // Lazy load folder children when navigating into this folder
+  // Lazy load all parent folders in the path chain
+  React.useEffect(() => {
+    const loadPathChain = async () => {
+      // Load each folder in the path from root to current
+      for (let i = 1; i <= path.length; i++) {
+        const partialPath = path.slice(0, i);
+        const folderAtPath = getFolder(partialPath);
+        
+        if (folderAtPath && !state.loadedFolderIds.has(folderAtPath.id)) {
+          await loadFolderChildren(folderAtPath.id);
+        }
+      }
+    };
+    
+    if (path.length > 0) {
+      loadPathChain();
+    }
+  }, [path, state.loadedFolderIds, loadFolderChildren, getFolder]);
+
+  // Also load children of the current folder
   React.useEffect(() => {
     if (folder && !state.loadedFolderIds.has(folder.id)) {
       loadFolderChildren(folder.id);
@@ -126,7 +145,12 @@ export default function DynamicDataRoomPage() {
     [flattenedItems, state.rootFolders, searchValue, fileTypeFilter, dateFilter]
   );
   const folderItemsWithPath = React.useMemo(
-    () => children.map((item) => ({ item, path: path.length === 0 ? [item.slug] : [...path, item.slug] })),
+    () => children.map((item) => ({ 
+      item, 
+      path: isFolder(item) 
+        ? (path.length === 0 ? [item.slug] : [...path, item.slug])  // Folders: append their slug
+        : path  // Files: use parent folder path
+    })),
     [children, path]
   );
   const filteredFolderItems = React.useMemo(
@@ -150,7 +174,6 @@ export default function DynamicDataRoomPage() {
   React.useEffect(() => setPage((p) => Math.min(Math.max(p, 1), totalPages)), [totalPages]);
 
   const [viewMode, setViewMode] = React.useState<"grid" | "list">("list");
-  const ignoreNextRowClickRef = React.useRef(false);
   const [renameOpen, setRenameOpen] = React.useState(false);
   const [renameItemId, setRenameItemId] = React.useState<string | null>(null);
   const [renamePath, setRenamePath] = React.useState<DataRoomPath>(path);
@@ -195,8 +218,11 @@ export default function DynamicDataRoomPage() {
     }
   };
 
-  const itemParentPath = (item: DataRoomItem, itemPath: DataRoomPath): DataRoomPath =>
-    isFolder(item) ? itemPath.slice(0, -1) : itemPath;
+  const itemParentPath = (item: DataRoomItem, itemPath: DataRoomPath): DataRoomPath => {
+    // For folders: itemPath includes the folder's slug, so remove it to get parent
+    // For files: itemPath is already the parent folder path
+    return isFolder(item) ? itemPath.slice(0, -1) : itemPath;
+  };
 
   const openRename = (item: DataRoomItem, itemPath: DataRoomPath) => {
     setRenameItemId(item.id);
@@ -341,28 +367,39 @@ export default function DynamicDataRoomPage() {
     setMoveConfirmOpen(true);
   };
 
-  const handleMoveConfirm = () => {
+  const handleMoveConfirm = async () => {
     if (moveTargetPath === null) return;
-    if (moveItems && moveItems.length > 0) {
-      for (const { item, path: srcPath } of moveItems) moveItem(itemParentPath(item, srcPath), item.id, moveTargetPath);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        moveItems.forEach(({ item }) => next.delete(item.id));
-        return next;
-      });
-    } else if (moveItemObj) {
-      moveItem(moveItemPath, moveItemObj.id, moveTargetPath);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(moveItemObj.id);
-        return next;
-      });
-    }
+    
+    // Close dialog immediately for better UX
     setMoveConfirmOpen(false);
-    setMoveTargetPath(null);
-    setMoveTargetLabel("");
-    setMoveItemObj(null);
-    setMoveItems(null);
+    const itemsToMove = moveItems && moveItems.length > 0 ? moveItems : (moveItemObj ? [{ item: moveItemObj, path: moveItemPath }] : []);
+    
+    try {
+      // Move all items
+      for (const { item, path: srcPath } of itemsToMove) {
+        // srcPath needs to be the parent path where the item currently lives
+        // For single item: moveItemPath is already the parent (processed by itemParentPath in openMove)
+        // For bulk items: selectedItemsWithPath has the raw path, so we need to process it
+        const parentPath = moveItems && moveItems.length > 0 ? itemParentPath(item, srcPath) : srcPath;
+        await moveItem(parentPath, item.id, moveTargetPath);
+      }
+      
+      // Clear selection after successful move
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        itemsToMove.forEach(({ item }) => next.delete(item.id));
+        return next;
+      });
+      
+      toast.success(itemsToMove.length === 1 ? "Item moved" : `${itemsToMove.length} items moved`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Move failed");
+    } finally {
+      setMoveTargetPath(null);
+      setMoveTargetLabel("");
+      setMoveItemObj(null);
+      setMoveItems(null);
+    }
   };
 
   const navigateTo = (item: DataRoomItem, itemPath: DataRoomPath) => {
@@ -375,7 +412,6 @@ export default function DynamicDataRoomPage() {
   };
 
   const openPreview = (file: DataRoomFile) => {
-    ignoreNextRowClickRef.current = true;
     setPreviewFile(file);
     setPreviewOpen(true);
   };
@@ -446,10 +482,12 @@ export default function DynamicDataRoomPage() {
   const backHref = parentPath ? (parentPath.length > 0 ? `/dataroom/${parentPath.join("/")}` : "/dataroom") : null;
 
   if (path.length > 0 && !folder) {
+    // Show loading state while folders are being lazy loaded
     return (
       <SidebarInset>
-        <div className="flex items-center justify-center h-full">
-          <p className="text-muted-foreground">Folder not found</p>
+        <div className="flex flex-col items-center justify-center h-full gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          <p className="text-muted-foreground">Loading folder...</p>
         </div>
       </SidebarInset>
     );
@@ -621,13 +659,7 @@ export default function DynamicDataRoomPage() {
                     <TableRow
                       key={item.id}
                       className={`cursor-pointer hover:bg-primary/5 group ${selectedIds.has(item.id) ? "bg-primary/5" : ""}`}
-                      onClick={() => {
-                        if (ignoreNextRowClickRef.current) {
-                          ignoreNextRowClickRef.current = false;
-                          return;
-                        }
-                        navigateTo(item, rowPath);
-                      }}
+                      onClick={() => navigateTo(item, rowPath)}
                     >
                       <TableCell onClick={(e) => e.stopPropagation()}>
                         <Checkbox
@@ -661,9 +693,9 @@ export default function DynamicDataRoomPage() {
                       <TableCell className="text-muted-foreground text-sm">
                         {isFile(item) ? item.size : isFolder(item) ? `${item.children.length} items` : ""}
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => { e.stopPropagation(); ignoreNextRowClickRef.current = true; }}>
+                          <DropdownMenuTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -752,13 +784,7 @@ export default function DynamicDataRoomPage() {
                   <Card
                     key={item.id}
                     className={`group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full ${selectedIds.has(item.id) ? "ring-2 ring-primary" : ""}`}
-                    onClick={() => {
-                      if (ignoreNextRowClickRef.current) {
-                        ignoreNextRowClickRef.current = false;
-                        return;
-                      }
-                      navigateTo(item, rowPath);
-                    }}
+                    onClick={() => navigateTo(item, rowPath)}
                   >
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                     <CardContent className="p-6 h-full flex flex-col relative">
@@ -778,63 +804,65 @@ export default function DynamicDataRoomPage() {
                           />
                           {getItemIcon(item)}
                         </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild onClick={(e) => { e.preventDefault(); e.stopPropagation(); ignoreNextRowClickRef.current = true; }}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
-                            >
-                              <MoreVerticalIcon className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openRename(item, rowPath); }}
-                            >
-                              <PencilIcon className="h-4 w-4 mr-2" />
-                              Rename
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openShare(item, rowPath); }}
-                            >
-                              <LinkIconLucide className="h-4 w-4 mr-2" />
-                              Copy Link
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openMove(item, rowPath); }}
-                            >
-                              <FolderIcon className="h-4 w-4 mr-2" />
-                              Move to...
-                            </DropdownMenuItem>
-                            {isFile(item) && (
-                              <>
-                                <DropdownMenuItem
-                                  className="focus:bg-primary/10 focus:text-primary"
-                                  onSelect={(e) => { e.preventDefault(); openPreview(item); }}
-                                >
-                                  Preview
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="focus:bg-primary/10 focus:text-primary"
-                                  onSelect={(e) => { e.preventDefault(); handleDownload(item); }}
-                                >
-                                  Download
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            <DropdownMenuItem
-                              className="focus:bg-destructive/10 focus:text-destructive"
-                              onSelect={(e) => { e.preventDefault(); openDelete(item, rowPath); }}
-                            >
-                              <TrashIcon className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <div onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
+                              >
+                                <MoreVerticalIcon className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                className="focus:bg-primary/10 focus:text-primary"
+                                onSelect={(e) => { e.preventDefault(); openRename(item, rowPath); }}
+                              >
+                                <PencilIcon className="h-4 w-4 mr-2" />
+                                Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="focus:bg-primary/10 focus:text-primary"
+                                onSelect={(e) => { e.preventDefault(); openShare(item, rowPath); }}
+                              >
+                                <LinkIconLucide className="h-4 w-4 mr-2" />
+                                Copy Link
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="focus:bg-primary/10 focus:text-primary"
+                                onSelect={(e) => { e.preventDefault(); openMove(item, rowPath); }}
+                              >
+                                <FolderIcon className="h-4 w-4 mr-2" />
+                                Move to...
+                              </DropdownMenuItem>
+                              {isFile(item) && (
+                                <>
+                                  <DropdownMenuItem
+                                    className="focus:bg-primary/10 focus:text-primary"
+                                    onSelect={(e) => { e.preventDefault(); openPreview(item); }}
+                                  >
+                                    Preview
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="focus:bg-primary/10 focus:text-primary"
+                                    onSelect={(e) => { e.preventDefault(); handleDownload(item); }}
+                                  >
+                                    Download
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              <DropdownMenuItem
+                                className="focus:bg-destructive/10 focus:text-destructive"
+                                onSelect={(e) => { e.preventDefault(); openDelete(item, rowPath); }}
+                              >
+                                <TrashIcon className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                       <div className="mt-auto">
                         <h3 className="font-semibold text-base mb-2 group-hover:text-primary transition-colors">

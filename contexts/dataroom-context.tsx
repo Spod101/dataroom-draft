@@ -20,6 +20,7 @@ import {
   deleteFile,
   updateFolderOrder,
   moveFolderToParent,
+  moveFileToFolder,
 } from "@/lib/dataroom-supabase";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -479,10 +480,16 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
       if (isFolder(item)) {
         const siblingSlugs = children.filter((c): c is DataRoomFolder => isFolder(c) && c.id !== itemId).map((c) => c.slug);
         await renameFolder(itemId, newName, siblingSlugs);
+        await refresh();
       } else {
         await renameFile(itemId, newName);
+        // For files, we need to reload the parent folder's children
+        const parentFolder = path.length === 0 ? null : getFolderAtPath(state.rootFolders, path);
+        if (parentFolder) {
+          const { folders, files } = await fetchFolderChildren(parentFolder.id);
+          dispatch({ type: "SET_FOLDER_CHILDREN", folderId: parentFolder.id, folders, files });
+        }
       }
-      await refresh();
     },
     [state.rootFolders, refresh]
   );
@@ -492,9 +499,18 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
       const children = getChildrenAtPath(state.rootFolders, path);
       const item = children.find((c) => c.id === itemId);
       if (!item) return;
-      if (isFolder(item)) await deleteFolder(itemId);
-      else await deleteFile(itemId);
-      await refresh();
+      if (isFolder(item)) {
+        await deleteFolder(itemId);
+        await refresh();
+      } else {
+        await deleteFile(itemId);
+        // For files, we need to reload the parent folder's children
+        const parentFolder = path.length === 0 ? null : getFolderAtPath(state.rootFolders, path);
+        if (parentFolder) {
+          const { folders, files } = await fetchFolderChildren(parentFolder.id);
+          dispatch({ type: "SET_FOLDER_CHILDREN", folderId: parentFolder.id, folders, files });
+        }
+      }
     },
     [state.rootFolders, refresh]
   );
@@ -504,9 +520,67 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const moveItem = React.useCallback(
-    (sourcePath: DataRoomPath, itemId: string, targetPath: DataRoomPath) =>
-      dispatch({ type: "MOVE_ITEM", sourcePath, itemId, targetPath, modifiedBy: currentUserDisplayName }),
-    [currentUserDisplayName]
+    async (sourcePath: DataRoomPath, itemId: string, targetPath: DataRoomPath) => {
+      // Find the item to determine if it's a file or folder
+      const sourceChildren = getChildrenAtPath(state.rootFolders, sourcePath);
+      const item = sourceChildren.find((c) => c.id === itemId);
+      if (!item) {
+        console.error("Item not found:", itemId, "in source path:", sourcePath);
+        return;
+      }
+
+      console.log("Moving item:", item.name, "from:", sourcePath, "to:", targetPath);
+
+      // Optimistically update UI
+      dispatch({ type: "MOVE_ITEM", sourcePath, itemId, targetPath, modifiedBy: currentUserDisplayName });
+
+      try {
+        if (isFolder(item)) {
+          // For folders: targetPath is the destination parent path
+          // If targetPath is [], we're moving to root (parent = null)
+          // If targetPath is ["company-profile"], we're moving INTO company-profile folder
+          let targetFolderId: string | null = null;
+          
+          if (targetPath.length > 0) {
+            const targetFolder = getFolderAtPath(state.rootFolders, targetPath);
+            if (!targetFolder) {
+              throw new Error("Target folder not found");
+            }
+            targetFolderId = targetFolder.id;
+          }
+          
+          // Get the order index (add to end of target folder)
+          const targetChildren = getChildrenAtPath(state.rootFolders, targetPath);
+          const orderIndex = targetChildren.filter(isFolder).length;
+          
+          console.log("Moving folder to parent ID:", targetFolderId, "with order:", orderIndex);
+          await moveFolderToParent(itemId, targetFolderId, orderIndex);
+        } else {
+          // For files: targetPath must point to a folder (cannot be root)
+          if (targetPath.length === 0) {
+            throw new Error("Cannot move file to root - files must be in a folder");
+          }
+          
+          const targetFolder = getFolderAtPath(state.rootFolders, targetPath);
+          if (!targetFolder) {
+            throw new Error("Target folder not found");
+          }
+          
+          console.log("Moving file to folder ID:", targetFolder.id);
+          await moveFileToFolder(itemId, targetFolder.id);
+        }
+        
+        console.log("Move successful, refreshing...");
+        // Refresh to get updated data from database
+        await refresh();
+      } catch (e) {
+        // If DB update fails, refresh to revert UI to DB state
+        console.error("Failed to move item:", e);
+        await refresh();
+        throw e;
+      }
+    },
+    [state.rootFolders, currentUserDisplayName, refresh]
   );
   const setSharing = React.useCallback(
     (path: DataRoomPath, itemId: string, sharing: string) =>
