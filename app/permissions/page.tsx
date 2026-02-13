@@ -335,40 +335,30 @@ export default function PermissionsPage() {
     setAddingUser(true);
 
     try {
-      // Create auth user with email confirmation disabled for admin-created users
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: newUserEmail.trim(),
-        password: newUserPassword,
-        options: { 
-          emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/`,
-          // Note: This requires Supabase email confirmation to be disabled in project settings
-          // or use the Admin API for auto-confirmation
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setAddUserError("Session expired. Please log in again.");
+        return;
+      }
+
+      const res = await fetch("/api/admin/create-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
         },
+        body: JSON.stringify({
+          name: newUserName.trim(),
+          email: newUserEmail.trim(),
+          password: newUserPassword,
+          role: newUserRole,
+        }),
       });
 
-      if (authError) {
-        setAddUserError(authError.message);
-        setAddingUser(false);
-        return;
-      }
+      const data = await res.json().catch(() => ({}));
 
-      if (!authData.user) {
-        setAddUserError("Failed to create user");
-        setAddingUser(false);
-        return;
-      }
-
-      // Create user profile
-      const { error: profileError } = await supabase.from("users").insert({
-        id: authData.user.id,
-        name: newUserName.trim() || newUserEmail.trim().split("@")[0],
-        email: authData.user.email || newUserEmail.trim(),
-        role: newUserRole,
-      });
-
-      if (profileError) {
-        setAddUserError(profileError.message);
-        setAddingUser(false);
+      if (!res.ok) {
+        setAddUserError(data.error ?? "Failed to create user");
         return;
       }
 
@@ -382,15 +372,14 @@ export default function PermissionsPage() {
         setUsers(updatedUsers as PermissionUser[]);
       }
 
-      // Reset form and close dialog
       setNewUserName("");
       setNewUserEmail("");
       setNewUserPassword("");
       setNewUserRole("user");
       setAddUserDialogOpen(false);
-      setAddingUser(false);
     } catch (err) {
       setAddUserError("An unexpected error occurred");
+    } finally {
       setAddingUser(false);
     }
   };
