@@ -334,35 +334,48 @@ export default function PermissionsPage() {
     setAddUserError(null);
     setAddingUser(true);
 
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        setAddUserError("Session expired. Please log in again.");
-        return;
-      }
+    const timeout = setTimeout(() => {
+      setAddingUser(false);
+      setAddUserError("Request timed out. The user may have been created—check the Users list.");
+    }, 15000);
 
-      const res = await fetch("/api/admin/create-user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: newUserEmail.trim(),
+        password: newUserPassword,
+        options: {
+          emailRedirectTo: typeof window !== "undefined" ? window.location.origin + "/" : undefined,
         },
-        body: JSON.stringify({
-          name: newUserName.trim(),
-          email: newUserEmail.trim(),
-          password: newUserPassword,
-          role: newUserRole,
-        }),
       });
 
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setAddUserError(data.error ?? "Failed to create user");
+      if (authError) {
+        clearTimeout(timeout);
+        setAddUserError(authError.message);
+        setAddingUser(false);
         return;
       }
 
-      // Refresh users list
+      if (!authData.user) {
+        clearTimeout(timeout);
+        setAddUserError("Failed to create user");
+        setAddingUser(false);
+        return;
+      }
+
+      const { error: profileError } = await supabase.from("users").insert({
+        id: authData.user.id,
+        name: newUserName.trim() || newUserEmail.trim().split("@")[0],
+        email: authData.user.email || newUserEmail.trim(),
+        role: newUserRole,
+      });
+
+      if (profileError) {
+        clearTimeout(timeout);
+        setAddUserError(profileError.message);
+        setAddingUser(false);
+        return;
+      }
+
       const { data: updatedUsers, error: fetchError } = await supabase
         .from("users")
         .select("id, name, email, role")
@@ -372,14 +385,16 @@ export default function PermissionsPage() {
         setUsers(updatedUsers as PermissionUser[]);
       }
 
+      clearTimeout(timeout);
       setNewUserName("");
       setNewUserEmail("");
       setNewUserPassword("");
       setNewUserRole("user");
       setAddUserDialogOpen(false);
+      setAddingUser(false);
     } catch (err) {
-      setAddUserError("An unexpected error occurred");
-    } finally {
+      clearTimeout(timeout);
+      setAddUserError(err instanceof Error ? err.message : "An unexpected error occurred");
       setAddingUser(false);
     }
   };
