@@ -334,34 +334,31 @@ export default function PermissionsPage() {
     setAddUserError(null);
     setAddingUser(true);
 
-    const timeout = setTimeout(() => {
-      setAddingUser(false);
-      setAddUserError("Request timed out. The user may have been created—check the Users list.");
-    }, 15000);
-
     try {
+      // Create auth user with email confirmation disabled for admin-created users
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newUserEmail.trim(),
         password: newUserPassword,
-        options: {
-          emailRedirectTo: typeof window !== "undefined" ? window.location.origin + "/" : undefined,
+        options: { 
+          emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/`,
+          // Note: This requires Supabase email confirmation to be disabled in project settings
+          // or use the Admin API for auto-confirmation
         },
       });
 
       if (authError) {
-        clearTimeout(timeout);
         setAddUserError(authError.message);
         setAddingUser(false);
         return;
       }
 
       if (!authData.user) {
-        clearTimeout(timeout);
         setAddUserError("Failed to create user");
         setAddingUser(false);
         return;
       }
 
+      // Create user profile
       const { error: profileError } = await supabase.from("users").insert({
         id: authData.user.id,
         name: newUserName.trim() || newUserEmail.trim().split("@")[0],
@@ -370,12 +367,12 @@ export default function PermissionsPage() {
       });
 
       if (profileError) {
-        clearTimeout(timeout);
         setAddUserError(profileError.message);
         setAddingUser(false);
         return;
       }
 
+      // Refresh users list
       const { data: updatedUsers, error: fetchError } = await supabase
         .from("users")
         .select("id, name, email, role")
@@ -385,7 +382,7 @@ export default function PermissionsPage() {
         setUsers(updatedUsers as PermissionUser[]);
       }
 
-      clearTimeout(timeout);
+      // Reset form and close dialog
       setNewUserName("");
       setNewUserEmail("");
       setNewUserPassword("");
@@ -393,8 +390,7 @@ export default function PermissionsPage() {
       setAddUserDialogOpen(false);
       setAddingUser(false);
     } catch (err) {
-      clearTimeout(timeout);
-      setAddUserError(err instanceof Error ? err.message : "An unexpected error occurred");
+      setAddUserError("An unexpected error occurred");
       setAddingUser(false);
     }
   };
