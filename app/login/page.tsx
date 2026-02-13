@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,6 +24,7 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,15 @@ export default function LoginPage() {
   const [showEmailNotConfirmed, setShowEmailNotConfirmed] = useState(false);
   const [resendingEmail, setResendingEmail] = useState(false);
   const [emailResent, setEmailResent] = useState(false);
+
+  // Redirect if already logged in (let AuthGuard handle it, but also check here)
+  useEffect(() => {
+    if (user) {
+      const params = new URLSearchParams(window.location.search);
+      const redirect = params.get('redirect') || '/';
+      router.push(redirect);
+    }
+  }, [user, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -56,12 +67,23 @@ export default function LoginPage() {
       return;
     }
 
-    // Redirect to intended page or home
+    // Verify session exists
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setError("Failed to establish session. Please try again.");
+      setLoading(false);
+      return;
+    }
+
+    // Get redirect URL
     const params = new URLSearchParams(window.location.search);
     const redirect = params.get('redirect') || '/';
     
-    setLoading(false);
-    router.push(redirect);
+    // Wait a brief moment for auth state to propagate to context
+    // Then use window.location for a full page reload to ensure auth state is properly initialized
+    // This prevents race conditions with the AuthGuard
+    await new Promise(resolve => setTimeout(resolve, 200));
+    window.location.href = redirect;
   }
 
   async function handleResendConfirmation() {
