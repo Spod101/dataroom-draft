@@ -326,8 +326,11 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   React.useEffect(() => {
-    refresh();
-  }, [refresh]);
+    // Refresh when auth profile is available
+    if (profile) {
+      refresh();
+    }
+  }, [profile, refresh]);
 
   const getChildren = React.useCallback(
     (path: DataRoomPath) => getChildrenAtPath(state.rootFolders, path),

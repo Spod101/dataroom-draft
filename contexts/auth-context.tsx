@@ -46,25 +46,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const lastActivityUpdate = React.useRef<number>(0);
 
   const fetchProfile = React.useCallback(async (userId: string): Promise<UserProfile | null> => {
-    const { data, error } = await supabase
-      .from("users")
-      .select("id, name, email, role")
-      .eq("id", userId)
-      .single();
-    if (error || !data) return null;
-    return data as UserProfile;
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, name, email, role")
+        .eq("id", userId)
+        .single();
+      
+      if (error) {
+        console.error('fetchProfile error:', error);
+        return null;
+      }
+      
+      if (!data) {
+        console.warn('fetchProfile: No data returned for user:', userId);
+        return null;
+      }
+      
+      return data as UserProfile;
+    } catch (error) {
+      console.error('fetchProfile exception:', error);
+      return null;
+    }
   }, []);
 
   const fetchSessions = React.useCallback(async (userId: string) => {
-    const { data, error } = await supabase
-      .from("user_sessions")
-      .select("*")
-      .eq("user_id", userId)
-      .gte("expires_at", new Date().toISOString())
-      .order("last_activity", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("user_sessions")
+        .select("*")
+        .eq("user_id", userId)
+        .gte("expires_at", new Date().toISOString())
+        .order("last_activity", { ascending: false });
 
-    if (error || !data) return [];
-    return data as UserSession[];
+      if (error) {
+        console.error('fetchSessions error:', error);
+        return [];
+      }
+      
+      if (!data) {
+        console.warn('fetchSessions: No data returned for user:', userId);
+        return [];
+      }
+      
+      return data as UserSession[];
+    } catch (error) {
+      console.error('fetchSessions exception:', error);
+      return [];
+    }
   }, []);
 
   const updateActivity = React.useCallback(async (sessionId: string) => {
@@ -74,34 +103,114 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const subscriptionRef = React.useRef<{ unsubscribe: () => void } | null>(null);
+
   React.useEffect(() => {
     let mounted = true;
     let initDone = false;
 
+  const loadUserData = async (user: { id: string; email?: string }) => {
+    try {
+      console.log('loadUserData: Fetching profile and sessions for user:', user.id);
+      const profile = await fetchProfile(user.id);
+      const sessions = await fetchSessions(user.id);
+      if (!mounted) return null;
+
+      const deviceInfo = getDeviceInfo();
+      const existingSession = sessions.find(s => s.device_info === deviceInfo);
+      
+      console.log('loadUserData: Profile:', profile ? 'loaded' : 'null', 'Sessions:', sessions.length);
+      
+      return {
+        user: { id: user.id, email: user.email ?? "" },
+        profile,
+        loading: false,
+        currentSession: existingSession || null,
+        sessions,
+      };
+    } catch (error) {
+      console.error('loadUserData: Error loading user data:', error);
+      return null;
+    }
+  };
+
     const init = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        // First, set up the auth state change listener BEFORE checking session
+        // This ensures we don't miss any auth events
+        const {
+          data: { subscription },
+        } = supabase.auth.onAuthStateChange(async (event, session) => {
+          if (!mounted) return;
+          
+          console.log('Auth state change:', event, session?.user?.id);
+          
+          if (!session?.user) {
+            // Only set to logged out if we've completed init or this is a SIGNED_OUT event
+            if (initDone || event === 'SIGNED_OUT') {
+              setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
+            }
+            return;
+          }
+
+          try {
+            const userData = await loadUserData(session.user);
+            if (!mounted || !userData) return;
+
+            // Only create session on actual sign in event
+            if (event === 'SIGNED_IN') {
+              const deviceInfo = getDeviceInfo();
+              const newSession = await createSession(session.user.id, deviceInfo);
+              userData.currentSession = newSession;
+              // Add the new session to the sessions array
+              userData.sessions = [newSession, ...userData.sessions];
+            }
+
+            setState(userData);
+            initDone = true;
+          } catch (error) {
+            console.error('Error loading user data in auth state change:', error);
+            if (!initDone) {
+              initDone = true;
+              setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
+            }
+          }
+        });
+
+        // Store subscription cleanup
+        subscriptionRef.current = subscription;
+
+        // Now check for existing session
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('getSession error:', error);
+          initDone = true;
+          setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
+          return;
+        }
+        
         if (!mounted) return;
+        
         if (!session?.user) {
+          // No session found - user is not logged in
           initDone = true;
           setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
           return;
         }
 
-        const profile = await fetchProfile(session.user.id);
-        const sessions = await fetchSessions(session.user.id);
+        // Session found - load user data
+        console.log('Loading user data for existing session:', session.user.id);
+        const userData = await loadUserData(session.user);
         if (!mounted) return;
-
-        const deviceInfo = getDeviceInfo();
-        const existingSession = sessions.find(s => s.device_info === deviceInfo);
+        
         initDone = true;
-        setState({
-          user: { id: session.user.id, email: session.user.email ?? "" },
-          profile,
-          loading: false,
-          currentSession: existingSession || null,
-          sessions,
-        });
+        if (userData) {
+          setState(userData);
+        } else {
+          console.warn('loadUserData returned null, setting empty state');
+          setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
+        }
       } catch (error) {
         console.error('Auth init error:', error);
         if (mounted && !initDone) {
@@ -122,43 +231,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }, 5000);
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-      if (!session?.user) {
-        setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
-        return;
-      }
-
-      const profile = await fetchProfile(session.user.id);
-      const sessions = await fetchSessions(session.user.id);
-
-      // Only create session on actual sign in event
-      let currentSession = null;
-      if (event === 'SIGNED_IN') {
-        const deviceInfo = getDeviceInfo();
-        currentSession = await createSession(session.user.id, deviceInfo);
-      } else {
-        // Find existing session for this device
-        const deviceInfo = getDeviceInfo();
-        currentSession = sessions.find(s => s.device_info === deviceInfo) || null;
-      }
-
-      if (!mounted) return;
-      setState({
-        user: { id: session.user.id, email: session.user.email ?? "" },
-        profile,
-        loading: false,
-        currentSession,
-        sessions,
-      });
-    });
-
     return () => {
       mounted = false;
       clearTimeout(timeout);
-      subscription.unsubscribe();
+      subscriptionRef.current?.unsubscribe();
     };
   }, [fetchProfile, fetchSessions]);
 
