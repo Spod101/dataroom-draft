@@ -33,15 +33,6 @@ export default function LoginPage() {
   const [resendingEmail, setResendingEmail] = useState(false);
   const [emailResent, setEmailResent] = useState(false);
 
-  // Redirect if already logged in (let AuthGuard handle it, but also check here)
-  useEffect(() => {
-    if (user) {
-      const params = new URLSearchParams(window.location.search);
-      const redirect = params.get('redirect') || '/';
-      router.push(redirect);
-    }
-  }, [user, router]);
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -49,41 +40,46 @@ export default function LoginPage() {
     setEmailResent(false);
     setLoading(true);
 
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-    if (authError) {
-      // Check if the error is due to unconfirmed email
-      if (authError.message.toLowerCase().includes("email not confirmed") || 
-          authError.message.toLowerCase().includes("confirm your email")) {
-        setShowEmailNotConfirmed(true);
-        setError("Your email address has not been confirmed yet.");
-      } else {
-        setError(authError.message);
+      if (authError) {
+        // Check if the error is due to unconfirmed email
+        if (authError.message.toLowerCase().includes("email not confirmed") || 
+            authError.message.toLowerCase().includes("confirm your email")) {
+          setShowEmailNotConfirmed(true);
+          setError("Your email address has not been confirmed yet.");
+        } else {
+          setError(authError.message);
+        }
+        setLoading(false);
+        return;
       }
-      setLoading(false);
-      return;
-    }
 
-    // Verify session exists
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      setError("Failed to establish session. Please try again.");
-      setLoading(false);
-      return;
-    }
+      // Verify session exists
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError("Failed to establish session. Please try again.");
+        setLoading(false);
+        return;
+      }
 
-    // Get redirect URL
-    const params = new URLSearchParams(window.location.search);
-    const redirect = params.get('redirect') || '/';
-    
-    // Wait a brief moment for auth state to propagate to context
-    // Then use window.location for a full page reload to ensure auth state is properly initialized
-    // This prevents race conditions with the AuthGuard
-    await new Promise(resolve => setTimeout(resolve, 200));
-    window.location.href = redirect;
+      // Get redirect URL
+      const params = new URLSearchParams(window.location.search);
+      const redirect = params.get('redirect') || '/dataroom';
+      
+      // For production reliability, use a full page reload after a brief delay
+      // This ensures the auth state is fully persisted and loaded
+      await new Promise(resolve => setTimeout(resolve, 500));
+      window.location.href = redirect;
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('An unexpected error occurred. Please try again.');
+      setLoading(false);
+    }
   }
 
   async function handleResendConfirmation() {
