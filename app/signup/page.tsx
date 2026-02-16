@@ -28,32 +28,66 @@ export default function SignUpPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: { 
-        emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/`,
-        data: {
-          name: name.trim() || email.trim().split("@")[0],
-        }
-      },
-    });
+    try {
+      const { error: authError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { 
+          emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/dataroom`,
+          data: {
+            name: name.trim() || email.trim().split("@")[0],
+          }
+        },
+      });
 
-    if (authError) {
-      setError(authError.message);
+      if (authError) {
+        setError(authError.message);
+        setLoading(false);
+        return;
+      }
+
+      // Show success message
+      setSuccess(true);
       setLoading(false);
-      return;
+    } catch (err) {
+      console.error('Signup error:', err);
+      setError('An unexpected error occurred. Please try again.');
+      setLoading(false);
     }
+  }
 
-
-    setLoading(false);
-    router.push("/");
+  if (success) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="space-y-1 text-center">
+            <CardTitle className="text-2xl">Check your email</CardTitle>
+            <CardDescription>
+              We sent a confirmation link to {email}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground text-center">
+              Click the link in the email to confirm your account and sign in.
+            </p>
+          </CardContent>
+          <CardFooter>
+            <Link href="/login" className="w-full">
+              <Button variant="outline" className="w-full">
+                Back to sign in
+              </Button>
+            </Link>
+          </CardFooter>
+        </Card>
+      </div>
+    );
   }
 
   return (

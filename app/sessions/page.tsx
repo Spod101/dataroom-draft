@@ -30,18 +30,7 @@ export default function SessionsPage() {
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return "Just now";
-    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? "s" : ""} ago`;
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
-    return date.toLocaleDateString();
+    return new Date(dateString).toLocaleDateString();
   };
 
   const handleRevokeSession = async (sessionId: string) => {
@@ -100,13 +89,8 @@ export default function SessionsPage() {
                         )}
                       </CardTitle>
                       <CardDescription className="mt-1">
-                        Last active: {formatDate(session.last_activity)}
+                        Created: {formatDate(session.created_at)}
                       </CardDescription>
-                      {session.ip_address && (
-                        <CardDescription className="text-xs mt-1">
-                          IP: {session.ip_address}
-                        </CardDescription>
-                      )}
                     </div>
                   </div>
                   {!isCurrentSession && (
@@ -122,8 +106,7 @@ export default function SessionsPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <p>Created: {new Date(session.created_at).toLocaleString()}</p>
+                <div className="text-xs text-muted-foreground">
                   <p>Expires: {new Date(session.expires_at).toLocaleString()}</p>
                 </div>
               </CardContent>

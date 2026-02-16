@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -24,7 +23,6 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -41,13 +39,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      const { error: authError } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
 
       if (authError) {
-        // Check if the error is due to unconfirmed email
+        // Check if email is not confirmed
         if (authError.message.toLowerCase().includes("email not confirmed") || 
             authError.message.toLowerCase().includes("confirm your email")) {
           setShowEmailNotConfirmed(true);
@@ -59,22 +57,8 @@ export default function LoginPage() {
         return;
       }
 
-      // Verify session exists
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setError("Failed to establish session. Please try again.");
-        setLoading(false);
-        return;
-      }
-
-      // Get redirect URL
-      const params = new URLSearchParams(window.location.search);
-      const redirect = params.get('redirect') || '/dataroom';
-      
-      // For production reliability, use a full page reload after a brief delay
-      // This ensures the auth state is fully persisted and loaded
-      await new Promise(resolve => setTimeout(resolve, 500));
-      window.location.href = redirect;
+      // Success - AuthContext will handle the session
+      // Router will redirect via AuthGuard
     } catch (err) {
       console.error('Login error:', err);
       setError('An unexpected error occurred. Please try again.');
@@ -93,11 +77,10 @@ export default function LoginPage() {
 
     if (resendError) {
       setError(resendError.message);
-      setResendingEmail(false);
-      return;
+    } else {
+      setEmailResent(true);
     }
 
-    setEmailResent(true);
     setResendingEmail(false);
   }
 
