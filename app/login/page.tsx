@@ -24,7 +24,7 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -33,14 +33,8 @@ export default function LoginPage() {
   const [resendingEmail, setResendingEmail] = useState(false);
   const [emailResent, setEmailResent] = useState(false);
 
-  // Redirect if already logged in (let AuthGuard handle it, but also check here)
-  useEffect(() => {
-    if (user) {
-      const params = new URLSearchParams(window.location.search);
-      const redirect = params.get('redirect') || '/';
-      router.push(redirect);
-    }
-  }, [user, router]);
+  // If user is already logged in, AuthGuard will handle the redirect
+  // No need for useEffect redirect here to avoid conflicts
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -77,7 +71,7 @@ export default function LoginPage() {
 
     // Get redirect URL
     const params = new URLSearchParams(window.location.search);
-    const redirect = params.get('redirect') || '/';
+    const redirect = params.get('redirect') || '/dataroom';
     
     // Wait a brief moment for auth state to propagate to context
     // Then use window.location for a full page reload to ensure auth state is properly initialized

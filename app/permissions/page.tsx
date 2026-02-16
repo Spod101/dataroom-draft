@@ -335,14 +335,12 @@ export default function PermissionsPage() {
     setAddingUser(true);
 
     try {
-      // Create auth user with email confirmation disabled for admin-created users
+      // Create auth user - email confirmation will be sent
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newUserEmail.trim(),
         password: newUserPassword,
         options: { 
-          emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/`,
-          // Note: This requires Supabase email confirmation to be disabled in project settings
-          // or use the Admin API for auto-confirmation
+          emailRedirectTo: `${typeof window !== "undefined" ? window.location.origin : ""}/dataroom`,
         },
       });
 
@@ -352,13 +350,15 @@ export default function PermissionsPage() {
         return;
       }
 
+      // Check if user was created (even if email confirmation is pending)
+      // In some cases, authData.user exists but session is null when confirmation is required
       if (!authData.user) {
         setAddUserError("Failed to create user");
         setAddingUser(false);
         return;
       }
 
-      // Create user profile
+      // Create user profile - this will work even if email is not yet confirmed
       const { error: profileError } = await supabase.from("users").insert({
         id: authData.user.id,
         name: newUserName.trim() || newUserEmail.trim().split("@")[0],
@@ -367,7 +367,12 @@ export default function PermissionsPage() {
       });
 
       if (profileError) {
-        setAddUserError(profileError.message);
+        // Check if this is a duplicate key error (user already exists)
+        if (profileError.code === '23505') {
+          setAddUserError("A user with this email already exists");
+        } else {
+          setAddUserError(profileError.message);
+        }
         setAddingUser(false);
         return;
       }
@@ -382,15 +387,16 @@ export default function PermissionsPage() {
         setUsers(updatedUsers as PermissionUser[]);
       }
 
-      // Reset form and close dialog
+      // Reset form and close dialog - Success!
       setNewUserName("");
       setNewUserEmail("");
       setNewUserPassword("");
       setNewUserRole("user");
       setAddUserDialogOpen(false);
-      setAddingUser(false);
     } catch (err) {
-      setAddUserError("An unexpected error occurred");
+      console.error("Error adding user:", err);
+      setAddUserError(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
       setAddingUser(false);
     }
   };
