@@ -102,7 +102,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           currentSession: existingSession || null,
           sessions,
         });
-      } catch {
+      } catch (error) {
+        console.error('Auth init error:', error);
         if (mounted && !initDone) {
           initDone = true;
           setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
@@ -112,12 +113,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     init();
 
+    // Reduced timeout from 10s to 5s for faster fallback
     const timeout = setTimeout(() => {
       if (mounted && !initDone) {
+        console.warn('Auth initialization timeout');
         initDone = true;
         setState((prev) => (prev.loading ? { ...prev, loading: false } : prev));
       }
-    }, 10000);
+    }, 5000);
 
     const {
       data: { subscription },

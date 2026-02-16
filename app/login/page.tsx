@@ -32,17 +32,6 @@ export default function LoginPage() {
   const [showEmailNotConfirmed, setShowEmailNotConfirmed] = useState(false);
   const [resendingEmail, setResendingEmail] = useState(false);
   const [emailResent, setEmailResent] = useState(false);
-  const [justLoggedIn, setJustLoggedIn] = useState(false);
-
-  // After successful login, wait for auth context to update, then redirect
-  useEffect(() => {
-    if (justLoggedIn && !authLoading && user) {
-      const params = new URLSearchParams(window.location.search);
-      const redirect = params.get('redirect') || '/dataroom';
-      // Use router.push instead of window.location to avoid full reload
-      router.push(redirect);
-    }
-  }, [justLoggedIn, authLoading, user, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -51,36 +40,46 @@ export default function LoginPage() {
     setEmailResent(false);
     setLoading(true);
 
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
+    try {
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
-    if (authError) {
-      // Check if the error is due to unconfirmed email
-      if (authError.message.toLowerCase().includes("email not confirmed") || 
-          authError.message.toLowerCase().includes("confirm your email")) {
-        setShowEmailNotConfirmed(true);
-        setError("Your email address has not been confirmed yet.");
-      } else {
-        setError(authError.message);
+      if (authError) {
+        // Check if the error is due to unconfirmed email
+        if (authError.message.toLowerCase().includes("email not confirmed") || 
+            authError.message.toLowerCase().includes("confirm your email")) {
+          setShowEmailNotConfirmed(true);
+          setError("Your email address has not been confirmed yet.");
+        } else {
+          setError(authError.message);
+        }
+        setLoading(false);
+        return;
       }
-      setLoading(false);
-      return;
-    }
 
-    // Verify session exists
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      setError("Failed to establish session. Please try again.");
-      setLoading(false);
-      return;
-    }
+      // Verify session exists
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError("Failed to establish session. Please try again.");
+        setLoading(false);
+        return;
+      }
 
-    // Signal that login was successful - the useEffect above will handle redirect
-    // once the auth context recognizes the user
-    setJustLoggedIn(true);
-    // Keep loading state true until redirect happens
+      // Get redirect URL
+      const params = new URLSearchParams(window.location.search);
+      const redirect = params.get('redirect') || '/dataroom';
+      
+      // For production reliability, use a full page reload after a brief delay
+      // This ensures the auth state is fully persisted and loaded
+      await new Promise(resolve => setTimeout(resolve, 500));
+      window.location.href = redirect;
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('An unexpected error occurred. Please try again.');
+      setLoading(false);
+    }
   }
 
   async function handleResendConfirmation() {
