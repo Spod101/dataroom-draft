@@ -32,9 +32,17 @@ export default function LoginPage() {
   const [showEmailNotConfirmed, setShowEmailNotConfirmed] = useState(false);
   const [resendingEmail, setResendingEmail] = useState(false);
   const [emailResent, setEmailResent] = useState(false);
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
 
-  // If user is already logged in, AuthGuard will handle the redirect
-  // No need for useEffect redirect here to avoid conflicts
+  // After successful login, wait for auth context to update, then redirect
+  useEffect(() => {
+    if (justLoggedIn && !authLoading && user) {
+      const params = new URLSearchParams(window.location.search);
+      const redirect = params.get('redirect') || '/dataroom';
+      // Use router.push instead of window.location to avoid full reload
+      router.push(redirect);
+    }
+  }, [justLoggedIn, authLoading, user, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -69,15 +77,10 @@ export default function LoginPage() {
       return;
     }
 
-    // Get redirect URL
-    const params = new URLSearchParams(window.location.search);
-    const redirect = params.get('redirect') || '/dataroom';
-    
-    // Wait a brief moment for auth state to propagate to context
-    // Then use window.location for a full page reload to ensure auth state is properly initialized
-    // This prevents race conditions with the AuthGuard
-    await new Promise(resolve => setTimeout(resolve, 200));
-    window.location.href = redirect;
+    // Signal that login was successful - the useEffect above will handle redirect
+    // once the auth context recognizes the user
+    setJustLoggedIn(true);
+    // Keep loading state true until redirect happens
   }
 
   async function handleResendConfirmation() {
