@@ -17,6 +17,22 @@ export async function createSession(userId: string, deviceInfo: string, ipAddres
   const now = new Date();
   const expiresAt = new Date(now.getTime() + SESSION_TIMEOUT_MS);
 
+  // First check if a session already exists for this device
+  const { data: existingSessions } = await supabase
+    .from('user_sessions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('device_info', deviceInfo)
+    .gte('expires_at', now.toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  // If a valid session exists, return it instead of creating a duplicate
+  if (existingSessions && existingSessions.length > 0) {
+    return existingSessions[0] as UserSession;
+  }
+
+  // Otherwise create a new session
   const { data, error } = await supabase
     .from('user_sessions')
     .insert({

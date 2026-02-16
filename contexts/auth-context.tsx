@@ -80,13 +80,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
     let initDone = false;
 
-    const loadUserData = async (user: { id: string; email?: string }) => {
+    const loadUserData = async (user: { id: string; email?: string }, shouldCreateSession: boolean = false) => {
       const profile = await fetchProfile(user.id);
       const sessions = await fetchSessions(user.id);
       if (!mounted) return null;
 
       const deviceInfo = getDeviceInfo();
-      const existingSession = sessions.find(s => s.device_info === deviceInfo);
+      let existingSession = sessions.find(s => s.device_info === deviceInfo);
+      
+      // If no existing session found and we should create one, create it
+      if (!existingSession && shouldCreateSession) {
+        const newSession = await createSession(user.id, deviceInfo);
+        if (newSession) {
+          existingSession = newSession;
+          sessions.unshift(newSession);
+        }
+      }
       
       return {
         user: { id: user.id, email: user.email ?? "" },
@@ -123,9 +132,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (event === 'SIGNED_IN') {
             const deviceInfo = getDeviceInfo();
             const newSession = await createSession(session.user.id, deviceInfo);
-            userData.currentSession = newSession;
-            // Add the new session to the sessions array
-            userData.sessions = [newSession, ...userData.sessions];
+            if (newSession) {
+              userData.currentSession = newSession;
+              // Add the new session to the sessions array
+              userData.sessions = [newSession, ...userData.sessions];
+            }
           }
 
           setState(userData);
@@ -152,7 +163,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Session found - load user data
-        const userData = await loadUserData(session.user);
+        // Pass true to create session if it doesn't exist (handles page reload after login)
+        const userData = await loadUserData(session.user, true);
         if (!mounted) return;
         
         initDone = true;
