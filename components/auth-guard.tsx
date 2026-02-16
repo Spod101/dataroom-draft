@@ -22,7 +22,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!user && !isPublicRoute) {
       router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
     } else if (user && isPublicRoute) {
-      const redirect = new URLSearchParams(window.location.search).get('redirect') || '/dataroom';
+      const redirect = new URLSearchParams(window.location.search).get('redirect') || '/';
       router.push(redirect);
     } else if (user && isAdminRoute && !isAdmin) {
       router.push('/dataroom');

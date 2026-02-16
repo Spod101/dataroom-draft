@@ -99,8 +99,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const handleSignOut = async () => {
     await signOut()
-    // Use window.location for a full page reload to ensure auth state is cleared
-    window.location.href = "/login"
+    router.push("/login")
   }
 
   const isActive = (url: string) => {

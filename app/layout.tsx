@@ -33,7 +33,6 @@ export default function RootLayout({
     <html lang="en" className={roboto.variable} suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-        suppressHydrationWarning
       >
         <ThemeProvider defaultTheme="light" storageKey="dataroom-theme">
           <TooltipProvider>
