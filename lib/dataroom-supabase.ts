@@ -77,8 +77,12 @@ function dbFolderToDataRoomFolder(
   row: DbFolder,
   childFolders: DataRoomFolder[],
   childFiles: DataRoomFile[],
-  userDisplayNames: Map<string, string>
+  userDisplayNames: Map<string, string>,
+  itemCountOverride?: number
 ): DataRoomFolder {
+  const children = [...childFolders, ...childFiles];
+  const itemCount = typeof itemCountOverride === "number" ? itemCountOverride : children.length;
+
   return {
     id: row.id,
     name: row.name,
@@ -88,7 +92,8 @@ function dbFolderToDataRoomFolder(
     modifiedIso: row.last_modified ?? undefined,
     modifiedBy: (row.modified_by && userDisplayNames.get(row.modified_by)) ?? "—",
     sharing: "Shared",
-    children: [...childFolders, ...childFiles],
+    children,
+    itemCount,
     orderIndex: row.order_index ?? undefined,
   };
 }
@@ -129,9 +134,44 @@ export async function fetchRootFolders(): Promise<DataRoomFolder[]> {
 
     const folderRows = (folders ?? []) as DbFolder[];
     const modifiedByIds = folderRows.map((f) => f.modified_by).filter(Boolean) as string[];
+
+    // Pre-compute item counts (direct children) for each root folder
+    const rootFolderIds = folderRows.map((f) => f.id);
+    const [childFoldersRes, childFilesRes] = await Promise.all([
+      supabase
+        .from("folders")
+        .select("id, parent_folder_id, is_deleted")
+        .in("parent_folder_id", rootFolderIds)
+        .eq("is_deleted", false),
+      supabase
+        .from("files")
+        .select("id, folder_id, is_deleted")
+        .in("folder_id", rootFolderIds)
+        .eq("is_deleted", false),
+    ]);
+
+    if (childFoldersRes.error) throw new Error(childFoldersRes.error.message);
+    if (childFilesRes.error) throw new Error(childFilesRes.error.message);
+
+    const childFolderRows = (childFoldersRes.data ?? []) as { parent_folder_id: string | null }[];
+    const childFileRows = (childFilesRes.data ?? []) as { folder_id: string }[];
+
+    const itemCounts = new Map<string, number>();
+    for (const row of childFolderRows) {
+      const parentId = row.parent_folder_id;
+      if (!parentId) continue;
+      itemCounts.set(parentId, (itemCounts.get(parentId) ?? 0) + 1);
+    }
+    for (const row of childFileRows) {
+      const folderId = row.folder_id;
+      itemCounts.set(folderId, (itemCounts.get(folderId) ?? 0) + 1);
+    }
+
     const userDisplayNames = await fetchUserDisplayNames(modifiedByIds);
 
-    return folderRows.map((row) => dbFolderToDataRoomFolder(row, [], [], userDisplayNames));
+    return folderRows.map((row) =>
+      dbFolderToDataRoomFolder(row, [], [], userDisplayNames, itemCounts.get(row.id) ?? 0)
+    );
   });
 }
 
@@ -168,9 +208,47 @@ export async function fetchFolderChildren(folderId: string): Promise<{ folders: 
       ...folderRows.map((f) => f.modified_by).filter(Boolean),
       ...fileRows.map((f) => f.modified_by).filter(Boolean),
     ] as string[];
+
+    // Pre-compute item counts for each child folder we are returning.
+    const childFolderIds = folderRows.map((f) => f.id);
+    let itemCounts = new Map<string, number>();
+    if (childFolderIds.length > 0) {
+      const [grandchildFoldersRes, grandchildFilesRes] = await Promise.all([
+        supabase
+          .from("folders")
+          .select("id, parent_folder_id, is_deleted")
+          .in("parent_folder_id", childFolderIds)
+          .eq("is_deleted", false),
+        supabase
+          .from("files")
+          .select("id, folder_id, is_deleted")
+          .in("folder_id", childFolderIds)
+          .eq("is_deleted", false),
+      ]);
+
+      if (grandchildFoldersRes.error) throw new Error(grandchildFoldersRes.error.message);
+      if (grandchildFilesRes.error) throw new Error(grandchildFilesRes.error.message);
+
+      const grandchildFolderRows = (grandchildFoldersRes.data ?? []) as { parent_folder_id: string | null }[];
+      const grandchildFileRows = (grandchildFilesRes.data ?? []) as { folder_id: string }[];
+
+      itemCounts = new Map<string, number>();
+      for (const row of grandchildFolderRows) {
+        const parentId = row.parent_folder_id;
+        if (!parentId) continue;
+        itemCounts.set(parentId, (itemCounts.get(parentId) ?? 0) + 1);
+      }
+      for (const row of grandchildFileRows) {
+        const folderId = row.folder_id;
+        itemCounts.set(folderId, (itemCounts.get(folderId) ?? 0) + 1);
+      }
+    }
+
     const userDisplayNames = await fetchUserDisplayNames(modifiedByIds);
 
-    const folders = folderRows.map((row) => dbFolderToDataRoomFolder(row, [], [], userDisplayNames));
+    const folders = folderRows.map((row) =>
+      dbFolderToDataRoomFolder(row, [], [], userDisplayNames, itemCounts.get(row.id) ?? 0)
+    );
     const files = fileRows.map((row) => dbFileToDataRoomFile(row, userDisplayNames));
 
     return { folders, files };
@@ -422,7 +500,7 @@ export async function createFolder(
     details: { name },
   });
   const userDisplayNames = modifiedBy ? await fetchUserDisplayNames([modifiedBy]) : new Map<string, string>();
-  return dbFolderToDataRoomFolder(row, [], [], userDisplayNames);
+  return dbFolderToDataRoomFolder(row, [], [], userDisplayNames, 0);
 }
 
 /** Get sibling slugs for a parent (for unique slug when creating folder). */

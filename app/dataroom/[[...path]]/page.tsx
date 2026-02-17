@@ -176,6 +176,15 @@ export default function DynamicDataRoomPage() {
   const showLocationColumn = hasSearch;
   const hasActiveSearchOrFilter = hasSearch || fileTypeFilter !== "all" || dateFilter !== "";
 
+  // Loading state:
+  // - Root path uses global state.loading
+  // - Nested folders use loadedFolderIds so we can show a clear
+  //   "loading" state instead of looking like an empty folder
+  const isRootPath = path.length === 0;
+  const isCurrentFolderLoading =
+    (isRootPath && state.loading) ||
+    (!!folder && !state.loadedFolderIds.has(folder.id) && !state.error);
+
   const totalItems = displayItemsWithPath.length;
   const [page, setPage] = React.useState(1);
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -623,7 +632,7 @@ export default function DynamicDataRoomPage() {
         )}
 
         <div className="flex-1">
-          {state.loading ? (
+          {isCurrentFolderLoading ? (
             viewMode === "list" || hasActiveSearchOrFilter ? (
               <Card className="border-primary/20">
                 <TableSkeleton rows={8} showLocationColumn={showLocationColumn} showCheckbox={true} />
@@ -654,105 +663,163 @@ export default function DynamicDataRoomPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedDisplayItems.map(({ item, path: rowPath }) => (
-                    <TableRow
-                      key={item.id}
-                      className={`cursor-pointer hover:bg-primary/5 group ${selectedIds.has(item.id) ? "bg-primary/5" : ""}`}
-                      onClick={() => navigateTo(item, rowPath)}
-                    >
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedIds.has(item.id)}
-                          onCheckedChange={(checked) =>
-                            setSelectedIds((prev) => {
-                              const next = new Set(prev);
-                              if (checked) next.add(item.id);
-                              else next.delete(item.id);
-                              return next;
-                            })
-                          }
-                          aria-label={`Select ${item.name}`}
-                        />
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-3">
-                          {getItemIcon(item, "sm")}
-                          <span className="group-hover:text-primary transition-colors">
-                            {item.name}
-                          </span>
+                  {paginatedDisplayItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={showLocationColumn ? 7 : 6}
+                        className="h-40 text-center align-middle"
+                      >
+                        <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                          <FolderIcon className="h-6 w-6 opacity-60" />
+                          {hasActiveSearchOrFilter ? (
+                            <>
+                              <p className="text-sm">
+                                No items match your search or filters in this folder.
+                              </p>
+                              <p className="text-xs">
+                                Try adjusting or clearing your search and filters.
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-sm">
+                              This folder doesn&apos;t have any files yet.
+                            </p>
+                          )}
                         </div>
                       </TableCell>
-                      {showLocationColumn && (
-                        <TableCell className="text-muted-foreground text-sm max-w-[140px] truncate" title={getLocationLabel(rowPath, state.rootFolders)}>
-                          {getLocationLabel(rowPath, state.rootFolders)}
-                        </TableCell>
-                      )}
-                      <TableCell className="text-muted-foreground text-sm">{item.modified}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{item.modifiedBy}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {isFile(item) ? item.size : isFolder(item) ? `${item.children.length} items` : ""}
-                      </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
-                            >
-                              <MoreVerticalIcon className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openRename(item, rowPath); }}
-                            >
-                              <PencilIcon className="h-4 w-4 mr-2" />
-                              {isFile(item) && item.type === "link" ? "Edit Link" : "Rename"}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openShare(item); }}
-                            >
-                              <LinkIconLucide className="h-4 w-4 mr-2" />
-                              Share Link
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openMove(item, rowPath); }}
-                            >
-                              <FolderIcon className="h-4 w-4 mr-2" />
-                              Move to...
-                            </DropdownMenuItem>
-                            {isFile(item) && (
-                              <>
-                                <DropdownMenuItem
-                                  className="focus:bg-primary/10 focus:text-primary"
-                                  onSelect={(e) => { e.preventDefault(); openPreview(item); }}
-                                >
-                                  Preview
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="focus:bg-primary/10 focus:text-primary"
-                                  onSelect={(e) => { e.preventDefault(); handleDownload(item); }}
-                                >
-                                  Download
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            <DropdownMenuItem
-                              className="focus:bg-destructive/10 focus:text-destructive"
-                              onSelect={(e) => { e.preventDefault(); openDelete(item, rowPath); }}
-                            >
-                              <TrashIcon className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    paginatedDisplayItems.map(({ item, path: rowPath }) => (
+                      <TableRow
+                        key={item.id}
+                        className={`cursor-pointer hover:bg-primary/5 group ${selectedIds.has(item.id) ? "bg-primary/5" : ""}`}
+                        onClick={() => navigateTo(item, rowPath)}
+                      >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedIds.has(item.id)}
+                            onCheckedChange={(checked) =>
+                              setSelectedIds((prev) => {
+                                const next = new Set(prev);
+                                if (checked) next.add(item.id);
+                                else next.delete(item.id);
+                                return next;
+                              })
+                            }
+                            aria-label={`Select ${item.name}`}
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-3">
+                            {getItemIcon(item, "sm")}
+                            <span className="group-hover:text-primary transition-colors">
+                              {item.name}
+                            </span>
+                          </div>
+                        </TableCell>
+                        {showLocationColumn && (
+                          <TableCell
+                            className="text-muted-foreground text-sm max-w-[140px] truncate"
+                            title={getLocationLabel(rowPath, state.rootFolders)}
+                          >
+                            {getLocationLabel(rowPath, state.rootFolders)}
+                          </TableCell>
+                        )}
+                        <TableCell className="text-muted-foreground text-sm">{item.modified}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">{item.modifiedBy}</TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {isFile(item)
+                            ? item.size
+                            : isFolder(item)
+                            ? (() => {
+                                const count =
+                                  typeof item.itemCount === "number"
+                                    ? item.itemCount
+                                    : item.children.length;
+                                return `${count} item${count === 1 ? "" : "s"}`;
+                              })()
+                            : ""}
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
+                              >
+                                <MoreVerticalIcon className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                className="focus:bg-primary/10 focus:text-primary"
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  openRename(item, rowPath);
+                                }}
+                              >
+                                <PencilIcon className="h-4 w-4 mr-2" />
+                                {isFile(item) && item.type === "link" ? "Edit Link" : "Rename"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="focus:bg-primary/10 focus:text-primary"
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  openShare(item);
+                                }}
+                              >
+                                <LinkIconLucide className="h-4 w-4 mr-2" />
+                                Share Link
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="focus:bg-primary/10 focus:text-primary"
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  openMove(item, rowPath);
+                                }}
+                              >
+                                <FolderIcon className="h-4 w-4 mr-2" />
+                                Move to...
+                              </DropdownMenuItem>
+                              {isFile(item) && (
+                                <>
+                                  <DropdownMenuItem
+                                    className="focus:bg-primary/10 focus:text-primary"
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      openPreview(item);
+                                    }}
+                                  >
+                                    Preview
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="focus:bg-primary/10 focus:text-primary"
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      handleDownload(item);
+                                    }}
+                                  >
+                                    Download
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              <DropdownMenuItem
+                                className="focus:bg-destructive/10 focus:text-destructive"
+                                onSelect={(e) => {
+                                  e.preventDefault();
+                                  openDelete(item, rowPath);
+                                }}
+                              >
+                                <TrashIcon className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
               {totalPages > 1 && (
@@ -779,119 +846,163 @@ export default function DynamicDataRoomPage() {
                 </div>
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {paginatedDisplayItems.map(({ item, path: rowPath }) => (
-                  <Card
-                    key={item.id}
-                    className={`group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full ${selectedIds.has(item.id) ? "ring-2 ring-primary" : ""}`}
-                    onClick={() => navigateTo(item, rowPath)}
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <CardContent className="p-6 h-full flex flex-col relative">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                          <Checkbox
-                            checked={selectedIds.has(item.id)}
-                            onCheckedChange={(checked) =>
-                              setSelectedIds((prev) => {
-                                const next = new Set(prev);
-                                if (checked) next.add(item.id);
-                                else next.delete(item.id);
-                                return next;
-                              })
-                            }
-                            aria-label={`Select ${item.name}`}
-                          />
-                          {getItemIcon(item)}
-                        </div>
-                        <div onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
-                              >
-                                <MoreVerticalIcon className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                className="focus:bg-primary/10 focus:text-primary"
-                                onSelect={(e) => { e.preventDefault(); openRename(item, rowPath); }}
-                              >
-                                <PencilIcon className="h-4 w-4 mr-2" />
-                                Rename
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="focus:bg-primary/10 focus:text-primary"
-                                onSelect={(e) => { e.preventDefault(); openShare(item); }}
-                              >
-                                <LinkIconLucide className="h-4 w-4 mr-2" />
-                                Copy Link
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                className="focus:bg-primary/10 focus:text-primary"
-                                onSelect={(e) => { e.preventDefault(); openMove(item, rowPath); }}
-                              >
-                                <FolderIcon className="h-4 w-4 mr-2" />
-                                Move to...
-                              </DropdownMenuItem>
-                              {isFile(item) && (
-                                <>
-                                  <DropdownMenuItem
-                                    className="focus:bg-primary/10 focus:text-primary"
-                                    onSelect={(e) => { e.preventDefault(); openPreview(item); }}
-                                  >
-                                    Preview
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    className="focus:bg-primary/10 focus:text-primary"
-                                    onSelect={(e) => { e.preventDefault(); handleDownload(item); }}
-                                  >
-                                    Download
-                                  </DropdownMenuItem>
-                                </>
-                              )}
-                              <DropdownMenuItem
-                                className="focus:bg-destructive/10 focus:text-destructive"
-                                onSelect={(e) => { e.preventDefault(); openDelete(item, rowPath); }}
-                              >
-                                <TrashIcon className="h-4 w-4 mr-2" />
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
+                {paginatedDisplayItems.length === 0 ? (
+                  <Card className="border-dashed border-primary/20 bg-muted/40 flex items-stretch">
+                    <CardContent className="p-6 flex flex-col items-center justify-center text-center w-full text-muted-foreground">
+                      <div className="mb-3">
+                        <FolderIcon className="h-10 w-10 opacity-70 mx-auto" />
                       </div>
-                      <div className="mt-auto">
-                        <h3 className="font-semibold text-base mb-2 group-hover:text-primary transition-colors">
-                          {item.name}
+                      {hasActiveSearchOrFilter ? (
+                        <>
+                          <h3 className="font-medium text-sm mb-1">
+                            No items match your search or filters.
+                          </h3>
+                          <p className="text-xs">
+                            Try adjusting or clearing your search and filters.
+                          </p>
+                        </>
+                      ) : (
+                        <h3 className="font-medium text-sm">
+                          This folder doesn&apos;t have any files yet.
                         </h3>
-                        {item.description && (
-                          <p className="text-xs text-muted-foreground">{item.description}</p>
-                        )}
-                      </div>
+                      )}
                     </CardContent>
                   </Card>
-                ))}
-                
-                {!hasActiveSearchOrFilter && (
-                  <Card
-                    className="group hover:shadow-lg hover:shadow-primary/20 hover:border-primary transition-all cursor-pointer relative overflow-hidden border-2 border-dashed border-primary/40 bg-primary/5"
-                    onClick={() => setNewFolderOpen(true)}
-                  >
-                    <CardContent className="p-6 h-full flex flex-col items-center justify-center min-h-[180px]">
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 group-hover:scale-110 transition-all">
-                          <PlusIcon className="h-8 w-8 text-primary" />
-                        </div>
-                        <div className="text-center">
-                          <h3 className="font-semibold text-lg mb-1 text-primary">New Folder</h3>
-                          <p className="text-sm text-muted-foreground">Create a new folder</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                ) : (
+                  <>
+                    {paginatedDisplayItems.map(({ item, path: rowPath }) => (
+                      <Card
+                        key={item.id}
+                        className={`group hover:shadow-lg hover:shadow-primary/10 hover:border-primary/50 transition-all cursor-pointer relative overflow-hidden border-primary/20 h-full ${selectedIds.has(item.id) ? "ring-2 ring-primary" : ""}`}
+                        onClick={() => navigateTo(item, rowPath)}
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <CardContent className="p-6 h-full flex flex-col relative">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                              <Checkbox
+                                checked={selectedIds.has(item.id)}
+                                onCheckedChange={(checked) =>
+                                  setSelectedIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (checked) next.add(item.id);
+                                    else next.delete(item.id);
+                                    return next;
+                                  })
+                                }
+                                aria-label={`Select ${item.name}`}
+                              />
+                              {getItemIcon(item)}
+                            </div>
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary"
+                                  >
+                                    <MoreVerticalIcon className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    className="focus:bg-primary/10 focus:text-primary"
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      openRename(item, rowPath);
+                                    }}
+                                  >
+                                    <PencilIcon className="h-4 w-4 mr-2" />
+                                    Rename
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="focus:bg-primary/10 focus:text-primary"
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      openShare(item);
+                                    }}
+                                  >
+                                    <LinkIconLucide className="h-4 w-4 mr-2" />
+                                    Copy Link
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    className="focus:bg-primary/10 focus:text-primary"
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      openMove(item, rowPath);
+                                    }}
+                                  >
+                                    <FolderIcon className="h-4 w-4 mr-2" />
+                                    Move to...
+                                  </DropdownMenuItem>
+                                  {isFile(item) && (
+                                    <>
+                                      <DropdownMenuItem
+                                        className="focus:bg-primary/10 focus:text-primary"
+                                        onSelect={(e) => {
+                                          e.preventDefault();
+                                          openPreview(item);
+                                        }}
+                                      >
+                                        Preview
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        className="focus:bg-primary/10 focus:text-primary"
+                                        onSelect={(e) => {
+                                          e.preventDefault();
+                                          handleDownload(item);
+                                        }}
+                                      >
+                                        Download
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
+                                  <DropdownMenuItem
+                                    className="focus:bg-destructive/10 focus:text-destructive"
+                                    onSelect={(e) => {
+                                      e.preventDefault();
+                                      openDelete(item, rowPath);
+                                    }}
+                                  >
+                                    <TrashIcon className="h-4 w-4 mr-2" />
+                                    Delete
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+                          <div className="mt-auto">
+                            <h3 className="font-semibold text-base mb-2 group-hover:text-primary transition-colors">
+                              {item.name}
+                            </h3>
+                            {item.description && (
+                              <p className="text-xs text-muted-foreground">{item.description}</p>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+
+                    {!hasActiveSearchOrFilter && (
+                      <Card
+                        className="group hover:shadow-lg hover:shadow-primary/20 hover:border-primary transition-all cursor-pointer relative overflow-hidden border-2 border-dashed border-primary/40 bg-primary/5"
+                        onClick={() => setNewFolderOpen(true)}
+                      >
+                        <CardContent className="p-6 h-full flex flex-col items-center justify-center min-h-[180px]">
+                          <div className="flex flex-col items-center gap-3">
+                            <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 group-hover:scale-110 transition-all">
+                              <PlusIcon className="h-8 w-8 text-primary" />
+                            </div>
+                            <div className="text-center">
+                              <h3 className="font-semibold text-lg mb-1 text-primary">New Folder</h3>
+                              <p className="text-sm text-muted-foreground">Create a new folder</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </>
                 )}
               </div>
               {totalPages > 1 && (

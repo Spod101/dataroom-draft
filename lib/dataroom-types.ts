@@ -30,6 +30,8 @@ export type DataRoomFolder = {
   modifiedBy: string;
   sharing: string;
   children: DataRoomItem[];
+  /** Number of direct children (folders + files). Useful before children are lazily loaded. */
+  itemCount?: number;
   /** Order index for sidebar display (lower = higher in list) */
   orderIndex?: number;
 };
