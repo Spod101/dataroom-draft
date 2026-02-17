@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -12,21 +11,33 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SearchBar } from "@/components/dataroom/search-bar";
+import { FilterSelect } from "@/components/dataroom/filter-select";
 import { FileTextIcon, UsersIcon, EyeIcon, DownloadIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { InsightsFileListSkeleton, InsightsStatsSkeleton, InsightsUserTableSkeleton } from "@/components/insights/insights-skeleton";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+} from "recharts";
 
 type FileSummary = {
   id: string;
   name: string;
-  folderName: string | null;
+  folderId: string | null;
+  folderPath: string | null;
   views: number;
   downloads: number;
 };
 
 type UserFileStats = {
-  userId: string | null;
+  identityKey: string;
   userName: string;
   views: number;
   downloads: number;
@@ -38,11 +49,21 @@ export default function InsightsPage() {
 
   const [fileSummaries, setFileSummaries] = React.useState<FileSummary[]>([]);
   const [selectedFileId, setSelectedFileId] = React.useState<string | null>(null);
+  const [perFileUserMap, setPerFileUserMap] = React.useState<
+    Map<string, Map<string, { views: number; downloads: number }>> | null
+  >(null);
+  const [identityLabelMap, setIdentityLabelMap] = React.useState<Map<string, string> | null>(
+    null
+  );
+  const [perFileViewSeries, setPerFileViewSeries] = React.useState<
+    Map<string, { date: string; count: number }[]>
+  >();
   const [userStats, setUserStats] = React.useState<UserFileStats[]>([]);
   const [searchFile, setSearchFile] = React.useState("");
   const [searchUser, setSearchUser] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [viewsRange, setViewsRange] = React.useState<"7d" | "30d" | "90d" | "all">("7d");
 
   React.useEffect(() => {
     async function loadInsights() {
@@ -51,7 +72,7 @@ export default function InsightsPage() {
       try {
         const { data: events, error: eventsError } = await supabase
           .from("file_events")
-          .select("id, created_at, event_type, file_id, user_id, folder_id")
+          .select("id, created_at, event_type, file_id, user_id, folder_id, details")
           .order("created_at", { ascending: false })
           .limit(1000);
 
@@ -73,22 +94,13 @@ export default function InsightsPage() {
               .filter((v): v is string => !!v)
           )
         );
-        const folderIds = Array.from(
-          new Set(
-            ev
-              .map((e) => e.folder_id as string | null)
-              .filter((v): v is string => !!v)
-          )
-        );
 
         const [filesRes, usersRes, foldersRes] = await Promise.all([
           supabase.from("files").select("id, name, folder_id").in("id", fileIds),
           userIds.length
             ? supabase.from("users").select("id, name").in("id", userIds)
             : Promise.resolve({ data: [], error: null }),
-          folderIds.length
-            ? supabase.from("folders").select("id, name").in("id", folderIds)
-            : Promise.resolve({ data: [], error: null }),
+          supabase.from("folders").select("id, name, parent_folder_id"),
         ]);
 
         if (filesRes.error) throw filesRes.error;
@@ -112,35 +124,90 @@ export default function InsightsPage() {
           userMap.set(u.id as string, ((u.name as string | null) ?? "Unknown user") as string);
         }
 
-        const folderMap = new Map<string, string>();
+        const folderMetaMap = new Map<string, { name: string; parentId: string | null }>();
         for (const f of folders) {
-          folderMap.set(f.id as string, f.name as string);
+          folderMetaMap.set(f.id as string, {
+            name: f.name as string,
+            parentId: (f.parent_folder_id as string | null) ?? null,
+          });
+        }
+
+        const folderPathCache = new Map<string, string>();
+        function getFolderPath(folderId: string | null): string | null {
+          if (!folderId) return null;
+          const cached = folderPathCache.get(folderId);
+          if (cached) return cached;
+
+          const parts: string[] = [];
+          let current: string | null = folderId;
+          let safety = 0;
+          while (current && safety < 50) {
+            const meta = folderMetaMap.get(current);
+            if (!meta) break;
+            parts.push(meta.name);
+            current = meta.parentId;
+            safety += 1;
+          }
+
+          if (!parts.length) return null;
+          const path = parts.reverse().join(" / ");
+          folderPathCache.set(folderId, path);
+          return path;
         }
 
         const perFile = new Map<string, { views: number; downloads: number }>();
-        const perFileUser = new Map<
-          string,
-          Map<string | null, { views: number; downloads: number }>
-        >();
+        const perFileUser = new Map<string, Map<string, { views: number; downloads: number }>>();
+        const identityLabels = new Map<string, string>();
+        const perFileViewTimeline = new Map<string, Map<string, number>>();
 
         for (const e of ev) {
           const fid = e.file_id as string;
-          const uid = (e.user_id as string | null) ?? null;
+          const details = (e.details as Record<string, any>) || {};
+          const rawEmail =
+            typeof details.email === "string" && details.email.trim()
+              ? (details.email as string).trim()
+              : null;
+
+          let identityKey: string;
+          let displayName: string;
+
+          if (e.user_id) {
+            identityKey = `user:${e.user_id as string}`;
+            displayName = userMap.get(e.user_id as string) ?? "Unknown user";
+          } else if (rawEmail) {
+            identityKey = `email:${rawEmail.toLowerCase()}`;
+            displayName = rawEmail;
+          } else {
+            identityKey = "unknown";
+            displayName = "Unknown user";
+          }
+
+          identityLabels.set(identityKey, displayName);
+
           const fileAgg = perFile.get(fid) ?? { views: 0, downloads: 0 };
           const userMapForFile =
-            perFileUser.get(fid) ?? new Map<string | null, { views: number; downloads: number }>();
-          const userAgg = userMapForFile.get(uid) ?? { views: 0, downloads: 0 };
+            perFileUser.get(fid) ?? new Map<string, { views: number; downloads: number }>();
+          const userAgg = userMapForFile.get(identityKey) ?? { views: 0, downloads: 0 };
 
           if (e.event_type === "view") {
             fileAgg.views += 1;
             userAgg.views += 1;
+
+            // Track views over time (by date) for charts
+            const createdAt = new Date(e.created_at as string);
+            const dateKey = createdAt.toISOString().slice(0, 10); // YYYY-MM-DD
+            const fileTimeline =
+              perFileViewTimeline.get(fid) ?? new Map<string, number>();
+            const currentCount = fileTimeline.get(dateKey) ?? 0;
+            fileTimeline.set(dateKey, currentCount + 1);
+            perFileViewTimeline.set(fid, fileTimeline);
           } else if (e.event_type === "download") {
             fileAgg.downloads += 1;
             userAgg.downloads += 1;
           }
 
           perFile.set(fid, fileAgg);
-          userMapForFile.set(uid, userAgg);
+          userMapForFile.set(identityKey, userAgg);
           perFileUser.set(fid, userMapForFile);
         }
 
@@ -148,12 +215,12 @@ export default function InsightsPage() {
         for (const [fileId, stats] of perFile.entries()) {
           const meta = fileMap.get(fileId);
           if (!meta) continue;
-          const folderName =
-            (meta.folderId && folderMap.get(meta.folderId)) ?? null;
+          const folderPath = getFolderPath(meta.folderId);
           summaries.push({
             id: fileId,
             name: meta.name,
-            folderName,
+            folderId: meta.folderId,
+            folderPath,
             views: stats.views,
             downloads: stats.downloads,
           });
@@ -164,24 +231,17 @@ export default function InsightsPage() {
         setFileSummaries(summaries);
         const initialFileId = summaries[0]?.id ?? null;
         setSelectedFileId(initialFileId);
+        setPerFileUserMap(perFileUser);
+        setIdentityLabelMap(identityLabels);
 
-        if (initialFileId) {
-          const userMapForFile = perFileUser.get(initialFileId) ?? new Map();
-          const stats: UserFileStats[] = [];
-          for (const [uid, agg] of userMapForFile.entries()) {
-            const name = uid ? userMap.get(uid) ?? "Unknown user" : "Anonymous";
-            stats.push({
-              userId: uid,
-              userName: name,
-              views: agg.views,
-              downloads: agg.downloads,
-            });
-          }
-          stats.sort((a, b) => b.views - a.views || b.downloads - a.downloads);
-          setUserStats(stats);
-        } else {
-          setUserStats([]);
+        const viewSeriesMap = new Map<string, { date: string; count: number }[]>();
+        for (const [fileId, seriesMap] of perFileViewTimeline.entries()) {
+          const points = Array.from(seriesMap.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, count]) => ({ date, count }));
+          viewSeriesMap.set(fileId, points);
         }
+        setPerFileViewSeries(viewSeriesMap);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load insights");
       } finally {
@@ -192,12 +252,32 @@ export default function InsightsPage() {
     void loadInsights();
   }, []);
 
+  // Recompute per-user stats whenever the selected file or aggregates change.
   React.useEffect(() => {
-    // When selected file changes, recompute per-user stats from events already loaded.
-    // For simplicity we recompute from state rather than re-querying.
-    // This effect is intentionally left empty because userStats is set in the initial load
-    // and we only change selectedFileId via clicks, which also update userStats inline.
-  }, [selectedFileId]);
+    if (!selectedFileId || !perFileUserMap || !identityLabelMap) {
+      setUserStats([]);
+      return;
+    }
+
+    const userMapForFile = perFileUserMap.get(selectedFileId);
+    if (!userMapForFile) {
+      setUserStats([]);
+      return;
+    }
+
+    const stats: UserFileStats[] = [];
+    for (const [identityKey, agg] of userMapForFile.entries()) {
+      const name = identityLabelMap.get(identityKey) ?? "Unknown user";
+      stats.push({
+        identityKey,
+        userName: name,
+        views: agg.views,
+        downloads: agg.downloads,
+      });
+    }
+    stats.sort((a, b) => b.views - a.views || b.downloads - a.downloads);
+    setUserStats(stats);
+  }, [selectedFileId, perFileUserMap, identityLabelMap]);
 
   const filteredFiles = fileSummaries.filter((f) =>
     f.name.toLowerCase().includes(searchFile.toLowerCase())
@@ -209,29 +289,65 @@ export default function InsightsPage() {
     u.userName.toLowerCase().includes(searchUser.toLowerCase())
   );
 
-  const chartData = React.useMemo(() => {
-    const totalViews = selectedFile?.views ?? 0;
-    const points = 20;
-    if (points <= 1) return [totalViews];
-    if (totalViews <= 0) return Array(points).fill(0);
-    const base = totalViews / points || 1;
-    return Array.from({ length: points }, (_, i) =>
-      Math.max(1, Math.round(base + Math.sin((i / (points - 1)) * Math.PI) * base))
-    );
-  }, [selectedFile?.views]);
+  const uniqueUsersForSelectedFile = React.useMemo(() => {
+    if (!selectedFileId || !perFileUserMap) return 0;
+    return perFileUserMap.get(selectedFileId)?.size ?? 0;
+  }, [selectedFileId, perFileUserMap]);
 
-  const maxValue = Math.max(...chartData, 1);
-  const chartWidth = 400;
-  const chartHeight = 100;
-  const pointSpacing = chartData.length > 1 ? chartWidth / (chartData.length - 1) : chartWidth;
-  const pathPoints = chartData
-    .map((value, index) => {
-      const x = index * pointSpacing;
-      const y = chartHeight - (value / maxValue) * chartHeight;
-      return `${index === 0 ? "M" : "L"} ${x} ${y}`;
-    })
-    .join(" ");
-  const areaPath = `${pathPoints} L ${chartWidth} ${chartHeight} L 0 ${chartHeight} Z`;
+  const chartSeries = React.useMemo(() => {
+    if (!selectedFileId || !perFileViewSeries) return [];
+    const rawSeries = perFileViewSeries.get(selectedFileId) ?? [];
+
+    if (!rawSeries.length) return [];
+
+    // Map of ISO date -> view count for this file
+    const countsByDate = new Map<string, number>();
+    for (const point of rawSeries) {
+      countsByDate.set(point.date, point.count);
+    }
+
+    // Helper to build a padded last-N-days window (including days with 0 views)
+    const buildWindow = (days: number) => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const result: { date: string; label: string; views: number }[] = [];
+      for (let offset = days - 1; offset >= 0; offset -= 1) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - offset);
+        const isoKey = d.toISOString().slice(0, 10);
+        const views = countsByDate.get(isoKey) ?? 0;
+        const label = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+        result.push({ date: isoKey, label, views });
+      }
+      return result;
+    };
+
+    if (viewsRange === "7d") return buildWindow(7);
+    if (viewsRange === "30d") return buildWindow(30);
+    if (viewsRange === "90d") return buildWindow(90);
+
+    // "all" – use the actual dates we have, in order, without padding
+    const sorted = [...rawSeries].sort((a, b) => a.date.localeCompare(b.date));
+    return sorted.map((point) => {
+      const d = new Date(point.date);
+      const label = Number.isNaN(d.getTime())
+        ? point.date
+        : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      return {
+        date: point.date,
+        label,
+        views: point.count,
+      };
+    });
+  }, [selectedFileId, perFileViewSeries, viewsRange]);
+
+  const chartDateRangeLabel = React.useMemo(() => {
+    if (!chartSeries.length) return null;
+    return {
+      start: chartSeries[0].label,
+      end: chartSeries[chartSeries.length - 1].label,
+    };
+  }, [chartSeries]);
 
   // Show access denied for non-admins
   if (!authLoading && !isAdmin) {
@@ -350,7 +466,7 @@ export default function InsightsPage() {
                     <span>Unique users</span>
                   </div>
                   <p className="text-3xl font-bold">
-                    {selectedFile ? userStats.length : 0}
+                    {selectedFile ? uniqueUsersForSelectedFile : 0}
                   </p>
                 </CardContent>
               </Card>
@@ -358,32 +474,85 @@ export default function InsightsPage() {
           )}
 
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base font-medium">
-                Views over time
-              </CardTitle>
+            <CardHeader className="pb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-base font-medium">
+                  Views over time
+                </CardTitle>
+                {selectedFile && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Location: {selectedFile.folderPath ?? "Root"}
+                  </p>
+                )}
+              </div>
+              <div className="w-full sm:w-[180px]">
+                <FilterSelect
+                  label="Range"
+                  value={viewsRange}
+                  onValueChange={(value) =>
+                    setViewsRange(value as "7d" | "30d" | "90d" | "all")
+                  }
+                  options={[
+                    { id: "7d", name: "Last 7 days" },
+                    { id: "30d", name: "Last 30 days" },
+                    { id: "90d", name: "Last 90 days" },
+                    { id: "all", name: "All time" },
+                  ]}
+                  width="w-full"
+                />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="h-[120px] w-full">
-                <svg
-                  viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-                  className="w-full h-full"
-                  preserveAspectRatio="none"
-                >
-                  <defs>
-                    <linearGradient id="viewsChartGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.3" />
-                      <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.05" />
-                    </linearGradient>
-                  </defs>
-                  <path d={areaPath} fill="url(#viewsChartGradient)" />
-                  <path
-                    d={pathPoints}
-                    fill="none"
-                    stroke="hsl(var(--primary))"
-                    strokeWidth="2"
-                  />
-                </svg>
+              <div className="h-[220px] w-full">
+                {chartSeries.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                    No view data for this file yet.
+                  </div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartSeries} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
+                      <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
+                      <XAxis
+                        dataKey="label"
+                        tick={{ fontSize: 11, fill: "#6b7280" }}
+                        tickLine={false}
+                        axisLine={{ stroke: "#d1d5db" }}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: "#6b7280" }}
+                        tickLine={false}
+                        axisLine={{ stroke: "#d1d5db" }}
+                        allowDecimals={false}
+                      />
+                      <Tooltip
+                        formatter={(value) => [`${value} views`, "Views"]}
+                        labelFormatter={(label) => `Date: ${label}`}
+                      />
+                      <Legend
+                        verticalAlign="top"
+                        height={24}
+                        wrapperStyle={{ fontSize: 11 }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="views"
+                        name="Views"
+                        stroke="#eab308"
+                        strokeWidth={2}
+                        dot={{ r: 3, strokeWidth: 1, fill: "#facc15" }}
+                        activeDot={{ r: 5 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+              <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+                <span>Views per day</span>
+                <span>
+                  {chartDateRangeLabel
+                    ? `${chartDateRangeLabel.start} → ${chartDateRangeLabel.end}`
+                    : "No data"}
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -417,7 +586,7 @@ export default function InsightsPage() {
                 )}
                 {!loading && selectedFile &&
                   filteredUserStats.map((user) => (
-                    <div key={user.userId ?? "anonymous"} className="flex items-center py-3 px-2">
+                    <div key={user.identityKey} className="flex items-center py-3 px-2">
                       <div className="flex items-center gap-3 flex-1">
                         <Avatar className="h-8 w-8">
                           <AvatarFallback>
