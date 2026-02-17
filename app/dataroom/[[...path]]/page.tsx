@@ -68,6 +68,16 @@ import { PasteUploadHandler } from "@/components/dataroom/paste-upload-handler";
 import { DropZoneUploadDialog } from "@/components/dataroom/drop-zone-upload-dialog";
 import { TableSkeleton } from "@/components/dataroom/table-skeleton";
 import { GridSkeleton } from "@/components/dataroom/grid-skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button as UIButton } from "@/components/ui/button";
+import { computeUniqueFileNameMappings } from "@/lib/dataroom-utils";
 
 function getItemIcon(item: DataRoomItem, size: "sm" | "lg" = "lg") {
   const sizeClass = size === "sm" ? "h-5 w-5" : "h-10 w-10";
@@ -217,9 +227,44 @@ export default function DynamicDataRoomPage() {
   const [previewFile, setPreviewFile] = React.useState<DataRoomFile | null>(null);
   const [previewOpen, setPreviewOpen] = React.useState(false);
 
+  // Per-folder existing file names for duplicate detection
   const existingFileNames = React.useMemo(
     () => new Set(children.filter(isFile).map((f) => f.name)),
     [children]
+  );
+
+  // State for "this upload will rename files" warning modal
+  const [uploadConflictOpen, setUploadConflictOpen] = React.useState(false);
+  const [pendingUploadFiles, setPendingUploadFiles] = React.useState<File[] | null>(null);
+  const [pendingUploadResolve, setPendingUploadResolve] = React.useState<((value?: void) => void) | null>(null);
+  const [pendingUploadReject, setPendingUploadReject] = React.useState<((reason?: any) => void) | null>(null);
+  const [conflictMappings, setConflictMappings] = React.useState<
+    { original: string; final: string }[]
+  >([]);
+
+  const startUploadWithConflicts = React.useCallback(
+    (files: File[]): Promise<void> => {
+      // Compute how these files will be renamed, given current folder contents.
+      const mappings = computeUniqueFileNameMappings(
+        files.map((f) => ({ name: f.name })),
+        existingFileNames
+      );
+
+      // If nothing will be renamed, just upload immediately.
+      if (mappings.length === 0) {
+        return uploadFiles(path, files);
+      }
+
+      // Otherwise, show a modal summarizing the renames before proceeding.
+      return new Promise<void>((resolve, reject) => {
+        setPendingUploadFiles(files);
+        setPendingUploadResolve(() => resolve);
+        setPendingUploadReject(() => reject);
+        setConflictMappings(mappings);
+        setUploadConflictOpen(true);
+      });
+    },
+    [existingFileNames, uploadFiles, path]
   );
 
   const handleRename = async (newName: string) => {
@@ -282,17 +327,24 @@ export default function DynamicDataRoomPage() {
     downloadFile(file).catch((err) => toast.error(err instanceof Error ? err.message : "Download failed"));
   };
 
-  const handleUpload = (files: DataRoomFile[], rawFiles?: File[]) => {
+  const handleUpload = (_files: DataRoomFile[], rawFiles?: File[]) => {
     if (rawFiles?.length) {
       setUploadError(null);
-      uploadFiles(path, rawFiles)
+      startUploadWithConflicts(rawFiles)
         .then(() => {
           toast.success("Files uploaded");
           setUploadDialogOpen(false);
         })
         .catch((e) => {
+          if (e instanceof Error && e.message === "Upload cancelled") {
+            // User cancelled from the conflict modal or upload itself; no toast.
+            return;
+          }
           const msg = e instanceof Error ? e.message : "Upload failed";
-          if (msg.toLowerCase().includes("don't have permission") || msg.toLowerCase().includes("do not have permission")) {
+          if (
+            msg.toLowerCase().includes("don't have permission") ||
+            msg.toLowerCase().includes("do not have permission")
+          ) {
             setUploadError(msg);
           } else {
             toast.error(msg);
@@ -449,9 +501,12 @@ export default function DynamicDataRoomPage() {
 
   const handleDropUpload = async (files: File[]) => {
     try {
-      await uploadFiles(path, files);
+      await startUploadWithConflicts(files);
       toast.success(`Uploaded ${files.length} file${files.length > 1 ? "s" : ""}`);
     } catch (err) {
+      if (err instanceof Error && err.message === "Upload cancelled") {
+        return;
+      }
       toast.error(err instanceof Error ? err.message : "Upload failed");
     }
   };
@@ -1089,7 +1144,7 @@ export default function DynamicDataRoomPage() {
       />
 
       <PasteUploadHandler
-        onUpload={(files) => uploadFiles(path, files)}
+        onUpload={(files) => startUploadWithConflicts(files)}
         enabled={!hasActiveSearchOrFilter}
       />
 
@@ -1099,6 +1154,101 @@ export default function DynamicDataRoomPage() {
         onOpenChange={setDropDialogOpen}
         onUpload={handleDropUpload}
       />
+
+      {/* Duplicate-name warning modal */}
+      <Dialog
+        open={uploadConflictOpen}
+        onOpenChange={(open) => {
+          if (!open && uploadConflictOpen) {
+            // Treat closing the dialog as cancelling the upload.
+            if (pendingUploadReject) {
+              pendingUploadReject(new Error("Upload cancelled"));
+            }
+            setUploadConflictOpen(false);
+            setPendingUploadFiles(null);
+            setPendingUploadResolve(null);
+            setPendingUploadReject(null);
+            setConflictMappings([]);
+          } else {
+            setUploadConflictOpen(open);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Files will be renamed</DialogTitle>
+            <DialogDescription>
+              Some files you&apos;re uploading have the same name as files already in this
+              folder, or share names with each other. They will be renamed to avoid
+              conflicts (for example, &quot;file.txt&quot; → &quot;file (1).txt&quot;).
+            </DialogDescription>
+          </DialogHeader>
+
+          {conflictMappings.length > 0 && (
+            <div className="mt-3 max-h-48 overflow-y-auto rounded-md border border-muted px-3 py-2 bg-muted/40">
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                These files will be renamed:
+              </p>
+              <ul className="space-y-1 text-xs">
+                {conflictMappings.map((m, idx) => (
+                  <li key={idx} className="flex items-center justify-between gap-2">
+                    <span className="truncate">{m.original}</span>
+                    <span className="shrink-0 text-muted-foreground">→</span>
+                    <span className="truncate font-medium text-primary">
+                      {m.final}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <DialogFooter className="mt-4">
+            <UIButton
+              variant="outline"
+              onClick={() => {
+                if (pendingUploadReject) {
+                  pendingUploadReject(new Error("Upload cancelled"));
+                }
+                setUploadConflictOpen(false);
+                setPendingUploadFiles(null);
+                setPendingUploadResolve(null);
+                setPendingUploadReject(null);
+                setConflictMappings([]);
+              }}
+            >
+              Cancel
+            </UIButton>
+            <UIButton
+              onClick={async () => {
+                if (!pendingUploadFiles || !pendingUploadResolve || !pendingUploadReject) {
+                  setUploadConflictOpen(false);
+                  return;
+                }
+                const files = pendingUploadFiles;
+                const resolve = pendingUploadResolve;
+                const reject = pendingUploadReject;
+
+                // Clear modal state before starting the actual upload
+                setUploadConflictOpen(false);
+                setPendingUploadFiles(null);
+                setPendingUploadResolve(null);
+                setPendingUploadReject(null);
+                setConflictMappings([]);
+
+                try {
+                  await uploadFiles(path, files);
+                  resolve();
+                } catch (e) {
+                  reject(e);
+                }
+              }}
+            >
+              Continue upload
+            </UIButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </SidebarInset>
   );
 }

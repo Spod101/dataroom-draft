@@ -22,6 +22,7 @@ import {
   moveFolderToParent,
   moveFileToFolder,
 } from "@/lib/dataroom-supabase";
+import { getUniqueFileName } from "@/lib/dataroom-utils";
 import { useAuth } from "@/contexts/auth-context";
 import { useRouter } from "next/navigation";
 
@@ -377,23 +378,56 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     async (path: DataRoomPath, files: File[]) => {
       const folder = getFolderAtPath(state.rootFolders, path);
       if (!folder) throw new Error("Folder not found");
-      const totalBytes = files.reduce((sum, f) => sum + (typeof f.size === "number" ? f.size : 0), 0);
+
+      // Build the set of already-taken names in this folder so we can ensure
+      // that every uploaded file ends up with a unique name per folder:
+      //   file.txt -> file (1).txt -> file (2).txt, etc.
+      const existingFileNames = new Set(
+        folder.children
+          .filter((c): c is DataRoomFile => isFile(c))
+          .map((f) => f.name)
+      );
+      const takenNames = new Set(existingFileNames);
+
+      const totalBytes = files.reduce(
+        (sum, f) => sum + (typeof f.size === "number" ? f.size : 0),
+        0
+      );
       const abortController = new AbortController();
-      dispatch({ type: "UPLOAD_START", totalFiles: files.length, totalBytes, abortController });
+      dispatch({
+        type: "UPLOAD_START",
+        totalFiles: files.length,
+        totalBytes,
+        abortController,
+      });
+
       const added: DataRoomFile[] = [];
       let completedFiles = 0;
       let uploadedBytes = 0;
       let cancelled = false;
-      
+
       try {
-        for (const file of files) {
+        for (const originalFile of files) {
           // Check if upload was cancelled
           if (abortController.signal.aborted) {
             cancelled = true;
             throw new Error("Upload cancelled");
           }
 
-          const fileSize = typeof file.size === "number" ? file.size : 0;
+          // Compute a unique name for this file in the target folder
+          const uniqueName = getUniqueFileName(originalFile.name, takenNames);
+          takenNames.add(uniqueName);
+
+          // Wrap in a new File with the unique name if needed; size/type stay the same.
+          const fileForUpload =
+            uniqueName === originalFile.name
+              ? originalFile
+              : new File([originalFile], uniqueName, {
+                  type: originalFile.type,
+                });
+
+          const fileSize =
+            typeof fileForUpload.size === "number" ? fileForUpload.size : 0;
           const baseBytesForFile = uploadedBytes;
           let estimatedBytesForFile = 0;
           let interval: ReturnType<typeof setInterval> | undefined;
@@ -415,7 +449,7 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
                 type: "UPLOAD_UPDATE",
                 completedFiles,
                 uploadedBytes: baseBytesForFile + estimatedBytesForFile,
-                currentFileName: file.name,
+                currentFileName: fileForUpload.name,
               });
             }, 300);
           } else {
@@ -424,7 +458,7 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
               type: "UPLOAD_UPDATE",
               completedFiles,
               uploadedBytes,
-              currentFileName: file.name,
+              currentFileName: fileForUpload.name,
             });
           }
 
@@ -434,15 +468,18 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
               cancelled = true;
               throw new Error("Upload cancelled");
             }
-            
-            const dataRoomFile = await uploadFileToFolder(folder.id, file);
-            
+
+            const dataRoomFile = await uploadFileToFolder(
+              folder.id,
+              fileForUpload
+            );
+
             // Check if cancelled while upload was in progress
             if (abortController.signal.aborted) {
               cancelled = true;
               throw new Error("Upload cancelled");
             }
-            
+
             added.push(dataRoomFile);
           } finally {
             if (interval) clearInterval(interval);
@@ -454,18 +491,22 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
             type: "UPLOAD_UPDATE",
             completedFiles,
             uploadedBytes,
-            currentFileName: file.name,
+            currentFileName: fileForUpload.name,
           });
         }
 
         // Show uploaded files immediately (optimistic)
-        if (added.length) dispatch({ type: "ADD_FILES_AT_PATH", path, files: added });
+        if (added.length)
+          dispatch({ type: "ADD_FILES_AT_PATH", path, files: added });
         dispatch({ type: "SET_ERROR", error: null });
         try {
           await refresh();
         } catch (e) {
           // Still show error so user knows refetch failed (e.g. RLS on SELECT)
-          dispatch({ type: "SET_ERROR", error: e instanceof Error ? e.message : "Failed to refresh" });
+          dispatch({
+            type: "SET_ERROR",
+            error: e instanceof Error ? e.message : "Failed to refresh",
+          });
           throw e;
         }
       } catch (e) {
