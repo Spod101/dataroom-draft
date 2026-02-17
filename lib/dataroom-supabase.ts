@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { withRetry } from "@/lib/retry-utils";
 import type { DataRoomFolder, DataRoomFile } from "@/lib/dataroom-types";
 import { slugFromName, uniqueSlug } from "@/lib/dataroom-types";
+import { preserveExtensionOnRename } from "@/lib/dataroom-utils";
 
 const BUCKET_NAME = "data-room";
 
@@ -613,7 +614,10 @@ export async function deleteFolder(folderId: string): Promise<void> {
   });
 }
 
-/** Rename a file. */
+/** Rename a file.
+ * If the user omits the file extension when renaming (e.g. "report" instead of "report.pdf"),
+ * we automatically preserve the original extension so downloads keep a recognizable file type.
+ */
 export async function renameFile(fileId: string, newName: string): Promise<void> {
   await assertCanEditFile(fileId, "rename");
   
@@ -625,10 +629,12 @@ export async function renameFile(fileId: string, newName: string): Promise<void>
     .maybeSingle();
   
   if (!oldData) throw new Error("File not found");
-  
   const oldName = (oldData as { name: string; storage_path: string | null; item_type: string }).name;
   const oldStoragePath = (oldData as { name: string; storage_path: string | null; item_type: string }).storage_path;
   const itemType = (oldData as { name: string; storage_path: string | null; item_type: string }).item_type;
+
+  // Normalize and preserve extension when user doesn't supply one
+  const finalNewName = preserveExtensionOnRename(newName, oldName);
   
   let newStoragePath = oldStoragePath;
   
@@ -639,7 +645,7 @@ export async function renameFile(fileId: string, newName: string): Promise<void>
     if (pathParts.length >= 3) {
       const folderId = pathParts[0];
       const storedFileId = pathParts[1];
-      newStoragePath = `${folderId}/${storedFileId}/${newName}`;
+      newStoragePath = `${folderId}/${storedFileId}/${finalNewName}`;
       
       // Copy file to new path in storage
       const { error: copyError } = await supabase.storage
@@ -665,8 +671,8 @@ export async function renameFile(fileId: string, newName: string): Promise<void>
   const { error } = await supabase
     .from("files")
     .update({
-      name: newName,
-      filename: newName,
+      name: finalNewName,
+      filename: finalNewName,
       storage_path: newStoragePath,
       last_modified: new Date().toISOString(),
       modified_by: modifiedBy,
@@ -676,7 +682,7 @@ export async function renameFile(fileId: string, newName: string): Promise<void>
   await logAuditEvent("file.rename", "file", {
     targetId: fileId,
     fileId,
-    details: { oldName, newName },
+    details: { oldName, newName: finalNewName },
   });
 }
 

@@ -38,6 +38,7 @@ import {
   type DataRoomItem,
 } from "@/lib/dataroom-types";
 import { FilePreviewModal } from "@/components/dataroom/file-preview-modal";
+import { getUniqueFileName, preserveExtensionOnRename } from "@/lib/dataroom-utils";
 import {
   MoreVerticalIcon,
   PencilIcon,
@@ -226,6 +227,14 @@ export default function DynamicDataRoomPage() {
   const [uploadError, setUploadError] = React.useState<string | null>(null);
   const [previewFile, setPreviewFile] = React.useState<DataRoomFile | null>(null);
   const [previewOpen, setPreviewOpen] = React.useState(false);
+  const [renameConflictOpen, setRenameConflictOpen] = React.useState(false);
+  const [pendingRename, setPendingRename] = React.useState<{
+    path: DataRoomPath;
+    itemId: string;
+    originalName: string;
+    requestedName: string;
+    finalName: string;
+  } | null>(null);
 
   // Per-folder existing file names for duplicate detection
   const existingFileNames = React.useMemo(
@@ -270,10 +279,64 @@ export default function DynamicDataRoomPage() {
   const handleRename = async (newName: string) => {
     if (!renameItemId) return;
     const itemPath = renamePath;
+
+    // Find the item being renamed in its parent folder
+    const siblings = getChildren(itemPath);
+    const item = siblings.find((c) => c.id === renameItemId);
+    if (!item) {
+      setRenameOpen(false);
+      setRenameItemId(null);
+      return;
+    }
+
+    let candidateName = newName;
+    try {
+      // For files, normalize and preserve extension if the user omits it.
+      // For folders/links, just trim and validate.
+      if (isFile(item)) {
+        candidateName = preserveExtensionOnRename(newName, item.name);
+      } else {
+        candidateName = newName.trim();
+        if (!candidateName) {
+          throw new Error("Name cannot be empty.");
+        }
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Invalid name");
+      return;
+    }
+
+    // Case-insensitive uniqueness across all items in the same folder
+    const taken = new Set(
+      siblings
+        .filter((c) => c.id !== item.id)
+        .map((c) => c.name.toLowerCase())
+    );
+
+    const uniqueName = getUniqueFileName(candidateName, taken);
+    const hasConflictAutoRename = uniqueName !== candidateName;
+
+    if (hasConflictAutoRename) {
+      // Close the input dialog and show a confirmation modal explaining the auto-rename.
+      setRenameOpen(false);
+      setPendingRename({
+        path: itemPath,
+        itemId: item.id,
+        originalName: item.name,
+        requestedName: candidateName,
+        finalName: uniqueName,
+      });
+      setRenameConflictOpen(true);
+      setRenameItemId(null);
+      return;
+    }
+
+    // No conflict – proceed immediately.
     setRenameOpen(false);
     setRenameItemId(null);
+    toast.show({ variant: "success", title: "Renaming item..." });
     try {
-      await renameItem(itemPath, renameItemId, newName);
+      await renameItem(itemPath, item.id, uniqueName);
       toast.success("Item renamed");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Rename failed");
@@ -1105,6 +1168,40 @@ export default function DynamicDataRoomPage() {
         cancelLabel="Cancel"
         variant="destructive"
         onConfirm={handleDelete}
+      />
+
+      {/* Rename conflict confirmation: explain automatic renaming (e.g. "file.txt" -> "file (1).txt") */}
+      <ConfirmDialog
+        open={renameConflictOpen && !!pendingRename}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRenameConflictOpen(false);
+            setPendingRename(null);
+          } else {
+            setRenameConflictOpen(true);
+          }
+        }}
+        title="Name already in use"
+        description={
+          pendingRename
+            ? `The name "${pendingRename.requestedName}" is already used in this folder. To avoid duplicates, this item will be renamed to "${pendingRename.finalName}".`
+            : ""
+        }
+        confirmLabel="Rename"
+        cancelLabel="Cancel"
+        onConfirm={async () => {
+          if (!pendingRename) return;
+          const { path: itemPath, itemId, finalName } = pendingRename;
+          setRenameConflictOpen(false);
+          setPendingRename(null);
+          toast.show({ variant: "success", title: "Renaming item..." });
+          try {
+            await renameItem(itemPath, itemId, finalName);
+            toast.success("Item renamed");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Rename failed");
+          }
+        }}
       />
 
       <ShareLinkModal

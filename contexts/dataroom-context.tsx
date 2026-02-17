@@ -22,7 +22,7 @@ import {
   moveFolderToParent,
   moveFileToFolder,
 } from "@/lib/dataroom-supabase";
-import { getUniqueFileName } from "@/lib/dataroom-utils";
+import { getUniqueFileName, preserveExtensionOnRename } from "@/lib/dataroom-utils";
 import { useAuth } from "@/contexts/auth-context";
 import { useRouter } from "next/navigation";
 
@@ -382,10 +382,11 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
       // Build the set of already-taken names in this folder so we can ensure
       // that every uploaded file ends up with a unique name per folder:
       //   file.txt -> file (1).txt -> file (2).txt, etc.
+      // We treat names as case-insensitive for uniqueness.
       const existingFileNames = new Set(
         folder.children
           .filter((c): c is DataRoomFile => isFile(c))
-          .map((f) => f.name)
+          .map((f) => f.name.toLowerCase())
       );
       const takenNames = new Set(existingFileNames);
 
@@ -414,9 +415,8 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
             throw new Error("Upload cancelled");
           }
 
-          // Compute a unique name for this file in the target folder
+          // Compute a unique name for this file in the target folder (case-insensitive)
           const uniqueName = getUniqueFileName(originalFile.name, takenNames);
-          takenNames.add(uniqueName);
 
           // Wrap in a new File with the unique name if needed; size/type stay the same.
           const fileForUpload =

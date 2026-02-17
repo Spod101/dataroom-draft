@@ -25,6 +25,7 @@ import { InputDialog } from "@/components/dataroom/input-dialog";
 import { ConfirmDialog } from "@/components/dataroom/confirm-dialog";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
+import { getUniqueFileName } from "@/lib/dataroom-utils";
 
 function pathKey(path: DataRoomPath): string {
   return path.join("/");
@@ -68,6 +69,14 @@ export function DataRoomNav() {
   const [deleteId, setDeleteId] = React.useState("");
   const [deleteName, setDeleteName] = React.useState("");
   const contextMenuRef = React.useRef<HTMLDivElement>(null);
+  const [renameConflictOpen, setRenameConflictOpen] = React.useState(false);
+  const [pendingRename, setPendingRename] = React.useState<{
+    path: DataRoomPath;
+    itemId: string;
+    originalName: string;
+    requestedName: string;
+    finalName: string;
+  } | null>(null);
 
   const toggleExpanded = React.useCallback((key: string) => {
     setExpanded((prev) => {
@@ -342,9 +351,45 @@ export function DataRoomNav() {
         submitLabel="Rename"
         defaultValue={renameName}
         onSubmit={async (value) => {
+          if (!renameId) {
+            setRenameOpen(false);
+            return;
+          }
+
+          const trimmed = value.trim();
+          if (!trimmed) {
+            toast.error("Name cannot be empty.");
+            return;
+          }
+
+          // Case-insensitive uniqueness across all items in the same parent path
+          const siblings = getChildren(renamePath);
+          const taken = new Set(
+            siblings
+              .filter((c) => c.id !== renameId)
+              .map((c) => c.name.toLowerCase())
+          );
+
+          const uniqueName = getUniqueFileName(trimmed, taken);
+          const hasConflictAutoRename = uniqueName !== trimmed;
+
+          if (hasConflictAutoRename) {
+            setRenameOpen(false);
+            setPendingRename({
+              path: renamePath,
+              itemId: renameId,
+              originalName: renameName,
+              requestedName: trimmed,
+              finalName: uniqueName,
+            });
+            setRenameConflictOpen(true);
+            return;
+          }
+
           setRenameOpen(false);
+          toast.show({ variant: "success", title: "Renaming folder..." });
           try {
-            await renameItem(renamePath, renameId, value);
+            await renameItem(renamePath, renameId, uniqueName);
             toast.success("Folder renamed");
           } catch (e) {
             toast.error(e instanceof Error ? e.message : "Rename failed");
@@ -383,6 +428,40 @@ export function DataRoomNav() {
             toast.success("Folder deleted");
           } catch (e) {
             toast.error(e instanceof Error ? e.message : "Delete failed");
+          }
+        }}
+      />
+
+      {/* Rename conflict confirmation for sidebar folders */}
+      <ConfirmDialog
+        open={renameConflictOpen && !!pendingRename}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRenameConflictOpen(false);
+            setPendingRename(null);
+          } else {
+            setRenameConflictOpen(true);
+          }
+        }}
+        title="Folder name already in use"
+        description={
+          pendingRename
+            ? `The name "${pendingRename.requestedName}" is already used in this location. To avoid duplicates, this folder will be renamed to "${pendingRename.finalName}".`
+            : ""
+        }
+        confirmLabel="Rename"
+        cancelLabel="Cancel"
+        onConfirm={async () => {
+          if (!pendingRename) return;
+          const { path, itemId, finalName } = pendingRename;
+          setRenameConflictOpen(false);
+          setPendingRename(null);
+          toast.show({ variant: "success", title: "Renaming folder..." });
+          try {
+            await renameItem(path, itemId, finalName);
+            toast.success("Folder renamed");
+          } catch (e) {
+            toast.error(e instanceof Error ? e.message : "Rename failed");
           }
         }}
       />
