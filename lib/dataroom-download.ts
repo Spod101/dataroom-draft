@@ -53,7 +53,11 @@ function collectFilesAndFoldersInFolder(
 export async function downloadFile(file: DataRoomFile): Promise<void> {
   try {
     await trackFileEvent("download", file.id);
-    await logAuditEvent("file.download", "file", { targetId: file.id, fileId: file.id });
+    await logAuditEvent("file.download", "file", {
+      targetId: file.id,
+      fileId: file.id,
+      details: { name: file.name },
+    });
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error("Failed to record download analytics/audit", e);

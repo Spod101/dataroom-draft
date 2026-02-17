@@ -178,12 +178,19 @@ export async function trackFileEventWithViewer(params: {
   viewerSessionId: string;
   email: string;
 }): Promise<void> {
+  const { data: fileData } = await supabaseAdmin
+    .from("files")
+    .select("name")
+    .eq("id", params.fileId)
+    .maybeSingle();
+  const fileName = fileData ? ((fileData as { name: string | null }).name ?? null) : null;
+
   const { error } = await supabaseAdmin.from("file_events").insert({
     user_id: null, // No user_id for anonymous viewers
     event_type: params.eventType,
     file_id: params.fileId,
     folder_id: params.folderId ?? null,
-    details: { viewer_session_id: params.viewerSessionId, email: params.email },
+    details: { viewer_session_id: params.viewerSessionId, email: params.email, ...(fileName ? { name: fileName } : {}) },
   });
 
   if (error) {
@@ -199,7 +206,7 @@ export async function trackFileEventWithViewer(params: {
     target_id: params.fileId,
     folder_id: params.folderId ?? null,
     file_id: params.fileId,
-    details: { viewer_session_id: params.viewerSessionId, email: params.email },
+    details: { viewer_session_id: params.viewerSessionId, email: params.email, ...(fileName ? { name: fileName } : {}) },
   });
 
   if (auditError) {

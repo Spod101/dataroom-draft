@@ -50,6 +50,8 @@ function getPeriodLabel(value: PeriodFilterValue): string {
 
 const getActionStyle = (action: string) => {
   switch (action.toLowerCase()) {
+    case "view":
+      return "bg-violet-100 text-violet-700 border-violet-200";
     case "upload":
       return "bg-blue-100 text-blue-700 border-blue-200";
     case "create":
@@ -72,6 +74,7 @@ const getActionStyle = (action: string) => {
 function formatActionLabel(action: string): string {
   if (action.startsWith("file.")) {
     const kind = action.slice("file.".length);
+    if (kind === "view") return "View";
     if (kind === "upload") return "Upload";
     if (kind === "rename") return "Rename";
     if (kind === "delete") return "Delete";
@@ -175,20 +178,33 @@ export default function AuditPage() {
         }
 
         const displayRows: AuditDisplayRow[] = (audit as any[]).map((row) => {
-          const member = (row.user_id && userMap.get(row.user_id)) || "Unknown user";
+          const details = (row.details as Record<string, any>) || {};
+          const detailsEmail =
+            typeof details.email === "string" && details.email.trim() ? details.email.trim() : null;
+          const member =
+            (row.user_id && userMap.get(row.user_id)) ||
+            detailsEmail ||
+            "Unknown user";
           const actionLabel = formatActionLabel(row.action as string);
 
           const fileName = row.file_id ? fileMap.get(row.file_id) : undefined;
           const folderName = row.folder_id ? folderMap.get(row.folder_id) : undefined;
-          const details = (row.details as Record<string, any>) || {};
           let description = "";
 
           const action = row.action as string;
           
           // File actions with detailed descriptions
           if (action === "file.hard_delete") {
-            const deletedFileName = details.deleted_file_id ? fileMap.get(details.deleted_file_id) : fileName;
-            description = `${member} permanently deleted file "${deletedFileName || 'Unknown'}"`;
+            const deletedFileName =
+              (details.deleted_file_id ? fileMap.get(details.deleted_file_id) : undefined) ??
+              (typeof details.name === "string" && details.name.trim() ? details.name.trim() : undefined) ??
+              fileName;
+            description = `${member} permanently deleted file "${deletedFileName || "Unknown"}"`;
+          } else if (action === "file.view") {
+            const viewedFileName =
+              (typeof details.name === "string" && details.name.trim() ? details.name.trim() : undefined) ??
+              fileName;
+            description = `${member} viewed file "${viewedFileName || "Unknown"}"`;
           } else if (action === "file.upload") {
             const uploadedFileName = details.name || fileName;
             const fileSize = details.size ? ` (${(details.size / 1024).toFixed(1)} KB)` : '';
@@ -203,17 +219,29 @@ export default function AuditPage() {
               description = `${member} renamed file to "${newName || fileName || 'Unknown'}"`;
             }
           } else if (action === "file.delete") {
-            description = `${member} moved file "${fileName || 'Unknown'}" to trash`;
+            const deletedFileName =
+              (typeof details.name === "string" && details.name.trim() ? details.name.trim() : undefined) ??
+              fileName;
+            description = `${member} moved file "${deletedFileName || "Unknown"}" to trash`;
           } else if (action === "file.download") {
-            description = `${member} downloaded file "${fileName || 'Unknown'}"`;
+            const downloadedFileName =
+              (typeof details.name === "string" && details.name.trim() ? details.name.trim() : undefined) ??
+              fileName;
+            description = `${member} downloaded file "${downloadedFileName || "Unknown"}"`;
           } else if (action === "file.restore") {
-            description = `${member} restored file "${fileName || 'Unknown'}" from trash`;
+            const restoredFileName =
+              (typeof details.name === "string" && details.name.trim() ? details.name.trim() : undefined) ??
+              fileName;
+            description = `${member} restored file "${restoredFileName || "Unknown"}" from trash`;
           }
           
           // Folder actions with detailed descriptions
           else if (action === "folder.hard_delete") {
-            const deletedFolderName = details.deleted_folder_id ? folderMap.get(details.deleted_folder_id) : folderName;
-            description = `${member} permanently deleted folder "${deletedFolderName || 'Unknown'}"`;
+            const deletedFolderName =
+              (details.deleted_folder_id ? folderMap.get(details.deleted_folder_id) : undefined) ??
+              (typeof details.name === "string" && details.name.trim() ? details.name.trim() : undefined) ??
+              folderName;
+            description = `${member} permanently deleted folder "${deletedFolderName || "Unknown"}"`;
           } else if (action === "folder.create") {
             const createdFolderName = details.name || folderName;
             description = `${member} created folder "${createdFolderName || 'Unknown'}"`;
@@ -226,9 +254,15 @@ export default function AuditPage() {
               description = `${member} renamed folder to "${newName || folderName || 'Unknown'}"`;
             }
           } else if (action === "folder.delete") {
-            description = `${member} moved folder "${folderName || 'Unknown'}" to trash`;
+            const deletedFolderName =
+              (typeof details.name === "string" && details.name.trim() ? details.name.trim() : undefined) ??
+              folderName;
+            description = `${member} moved folder "${deletedFolderName || "Unknown"}" to trash`;
           } else if (action === "folder.restore") {
-            description = `${member} restored folder "${folderName || 'Unknown'}" from trash`;
+            const restoredFolderName =
+              (typeof details.name === "string" && details.name.trim() ? details.name.trim() : undefined) ??
+              folderName;
+            description = `${member} restored folder "${restoredFolderName || "Unknown"}" from trash`;
           } else if (action === "folder.move") {
             const movedFolderName = details.folderName || folderName;
             const oldParent = details.oldParentName || "Root";

@@ -510,6 +510,12 @@ export async function renameFolder(folderId: string, newName: string, siblingSlu
 /** Soft-delete folder. */
 export async function deleteFolder(folderId: string): Promise<void> {
   await assertCanEditFolder(folderId, "delete folders");
+  const { data: folderData } = await supabase
+    .from("folders")
+    .select("name")
+    .eq("id", folderId)
+    .maybeSingle();
+  const folderName = folderData ? ((folderData as { name: string | null }).name ?? undefined) : undefined;
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("folders")
@@ -525,6 +531,7 @@ export async function deleteFolder(folderId: string): Promise<void> {
   await logAuditEvent("folder.delete", "folder", {
     targetId: folderId,
     folderId,
+    details: folderName ? { name: folderName } : undefined,
   });
 }
 
@@ -598,6 +605,12 @@ export async function renameFile(fileId: string, newName: string): Promise<void>
 /** Soft-delete file. */
 export async function deleteFile(fileId: string): Promise<void> {
   await assertCanEditFile(fileId, "delete");
+  const { data: fileData } = await supabase
+    .from("files")
+    .select("name")
+    .eq("id", fileId)
+    .maybeSingle();
+  const fileName = fileData ? ((fileData as { name: string | null }).name ?? undefined) : undefined;
   const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("files")
@@ -613,6 +626,7 @@ export async function deleteFile(fileId: string): Promise<void> {
   await logAuditEvent("file.delete", "file", {
     targetId: fileId,
     fileId,
+    details: fileName ? { name: fileName } : undefined,
   });
 }
 
@@ -693,6 +707,12 @@ export async function listTrash(): Promise<TrashSummary> {
 /** Restore a soft-deleted folder from trash. */
 export async function restoreFolder(folderId: string): Promise<void> {
   await assertCanEditFolder(folderId, "restore folders");
+  const { data: folderData } = await supabase
+    .from("folders")
+    .select("name")
+    .eq("id", folderId)
+    .maybeSingle();
+  const folderName = folderData ? ((folderData as { name: string | null }).name ?? undefined) : undefined;
   const { error } = await supabase
     .from("folders")
     .update({ is_deleted: false, deleted_at: null })
@@ -701,12 +721,19 @@ export async function restoreFolder(folderId: string): Promise<void> {
   await logAuditEvent("folder.restore", "folder", {
     targetId: folderId,
     folderId,
+    details: folderName ? { name: folderName } : undefined,
   });
 }
 
 /** Restore a soft-deleted file from trash. */
 export async function restoreFile(fileId: string): Promise<void> {
   await assertCanEditFile(fileId, "restore");
+  const { data: fileData } = await supabase
+    .from("files")
+    .select("name")
+    .eq("id", fileId)
+    .maybeSingle();
+  const fileName = fileData ? ((fileData as { name: string | null }).name ?? undefined) : undefined;
   const { error } = await supabase
     .from("files")
     .update({ is_deleted: false, deleted_at: null })
@@ -715,32 +742,45 @@ export async function restoreFile(fileId: string): Promise<void> {
   await logAuditEvent("file.restore", "file", {
     targetId: fileId,
     fileId,
+    details: fileName ? { name: fileName } : undefined,
   });
 }
 
 /** Permanently delete a folder (admin / editor only, RLS enforced). */
 export async function hardDeleteFolder(folderId: string): Promise<void> {
   await assertCanEditFolder(folderId, "permanently delete folders");
+  const { data: folderData } = await supabase
+    .from("folders")
+    .select("name")
+    .eq("id", folderId)
+    .maybeSingle();
+  const folderName = folderData ? ((folderData as { name: string | null }).name ?? undefined) : undefined;
   const { error } = await supabase.from("folders").delete().eq("id", folderId);
   if (error) throw new Error(error.message);
   // Log after delete: use folder_id null (folder no longer exists) and targetId/details for ID
   await logAuditEvent("folder.hard_delete", "folder", {
     targetId: folderId,
     folderId: null,
-    details: { deleted_folder_id: folderId },
+    details: { deleted_folder_id: folderId, ...(folderName ? { name: folderName } : {}) },
   });
 }
 
 /** Permanently delete a file (admin / editor only, RLS enforced). */
 export async function hardDeleteFile(fileId: string): Promise<void> {
   await assertCanEditFile(fileId, "permanently delete");
+  const { data: fileData } = await supabase
+    .from("files")
+    .select("name")
+    .eq("id", fileId)
+    .maybeSingle();
+  const fileName = fileData ? ((fileData as { name: string | null }).name ?? undefined) : undefined;
   const { error } = await supabase.from("files").delete().eq("id", fileId);
   if (error) throw new Error(error.message);
   // Log after delete: use file_id null (file no longer exists) and targetId/details for ID
   await logAuditEvent("file.hard_delete", "file", {
     targetId: fileId,
     fileId: null,
-    details: { deleted_file_id: fileId },
+    details: { deleted_file_id: fileId, ...(fileName ? { name: fileName } : {}) },
   });
 }
 
