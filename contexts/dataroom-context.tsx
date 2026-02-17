@@ -23,6 +23,7 @@ import {
   moveFileToFolder,
 } from "@/lib/dataroom-supabase";
 import { useAuth } from "@/contexts/auth-context";
+import { useRouter } from "next/navigation";
 
 export type DataRoomState = {
   rootFolders: DataRoomFolder[];
@@ -289,6 +290,7 @@ const DataRoomContext = React.createContext<DataRoomContextValue | null>(null);
 
 export function DataRoomProvider({ children }: { children: React.ReactNode }) {
   const { profile } = useAuth();
+  const router = useRouter();
   const currentUserDisplayName = profile?.name ?? "You";
 
   const [state, dispatch] = React.useReducer(reducer, {
@@ -328,6 +330,26 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Re-fetch when user returns to tab after being away (helps recover from stale connections)
+  React.useEffect(() => {
+    let hiddenAt: number | null = null;
+    const MIN_IDLE_MS = 60_000; // Only refresh if tab was hidden for 1+ min
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+      } else if (document.visibilityState === "visible" && hiddenAt !== null) {
+        const idleMs = Date.now() - hiddenAt;
+        if (idleMs >= MIN_IDLE_MS) {
+          refresh();
+          router.refresh(); // Revalidate RSC payloads
+        }
+        hiddenAt = null;
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [refresh, router]);
 
   const getChildren = React.useCallback(
     (path: DataRoomPath) => getChildrenAtPath(state.rootFolders, path),

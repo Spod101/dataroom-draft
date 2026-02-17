@@ -8,7 +8,7 @@ export type UserSession = {
   expires_at: string;
 };
 
-const SESSION_TIMEOUT_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_TIMEOUT_MS = 1 * 60 * 60 * 1000; // 1 hour
 
 export async function createSession(userId: string, deviceInfo: string): Promise<UserSession | null> {
   const now = new Date();

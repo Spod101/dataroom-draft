@@ -88,7 +88,7 @@ export default function DynamicDataRoomPage() {
     return pathParam;
   }, [pathParam]);
 
-  const { state, getChildren, getFolder, loadFolderChildren, addFolder, uploadFiles, renameItem, deleteItem, moveItem, setSharing } =
+  const { state, getChildren, getFolder, loadFolderChildren, addFolder, uploadFiles, renameItem, deleteItem, moveItem, setSharing, refresh } =
     useDataRoom();
   const toast = useToast();
   
@@ -597,8 +597,11 @@ export default function DynamicDataRoomPage() {
         )}
         
         {state.error && (
-          <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
-            {state.error}
+          <div className="flex items-center justify-between gap-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+            <span>{state.error}</span>
+            <Button variant="outline" size="sm" onClick={() => refresh()}>
+              Retry
+            </Button>
           </div>
         )}
         

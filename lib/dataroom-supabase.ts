@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { withRetry } from "@/lib/retry-utils";
 import type { DataRoomFolder, DataRoomFile } from "@/lib/dataroom-types";
 import { slugFromName, uniqueSlug } from "@/lib/dataroom-types";
 
@@ -112,63 +113,68 @@ async function fetchUserDisplayNames(userIds: string[]): Promise<Map<string, str
 /** 
  * Fetch only root-level folders (shallow load).
  * Use this for initial page load - much faster than fetchDataRoomTree.
+ * Wrapped with retry for resilience to network failures (e.g. after tab idle).
  */
 export async function fetchRootFolders(): Promise<DataRoomFolder[]> {
-  const { data: folders, error: foldersError } = await supabase
-    .from("folders")
-    .select("id, parent_folder_id, name, slug, description, last_modified, modified_by, is_deleted, order_index")
-    .is("parent_folder_id", null)
-    .eq("is_deleted", false)
-    .order("order_index", { ascending: true, nullsFirst: false })
-    .order("name", { ascending: true });
+  return withRetry(async () => {
+    const { data: folders, error: foldersError } = await supabase
+      .from("folders")
+      .select("id, parent_folder_id, name, slug, description, last_modified, modified_by, is_deleted, order_index")
+      .is("parent_folder_id", null)
+      .eq("is_deleted", false)
+      .order("order_index", { ascending: true, nullsFirst: false })
+      .order("name", { ascending: true });
 
-  if (foldersError) throw new Error(foldersError.message);
+    if (foldersError) throw new Error(foldersError.message);
 
-  const folderRows = (folders ?? []) as DbFolder[];
-  const modifiedByIds = folderRows.map((f) => f.modified_by).filter(Boolean) as string[];
-  const userDisplayNames = await fetchUserDisplayNames(modifiedByIds);
+    const folderRows = (folders ?? []) as DbFolder[];
+    const modifiedByIds = folderRows.map((f) => f.modified_by).filter(Boolean) as string[];
+    const userDisplayNames = await fetchUserDisplayNames(modifiedByIds);
 
-  // Return folders with empty children (lazy-loaded later)
-  return folderRows.map((row) => dbFolderToDataRoomFolder(row, [], [], userDisplayNames));
+    return folderRows.map((row) => dbFolderToDataRoomFolder(row, [], [], userDisplayNames));
+  });
 }
 
 /**
  * Fetch children (subfolders + files) for a specific folder.
  * Use this when user navigates into a folder.
+ * Wrapped with retry for resilience to network failures (e.g. after tab idle).
  */
 export async function fetchFolderChildren(folderId: string): Promise<{ folders: DataRoomFolder[]; files: DataRoomFile[] }> {
-  const [foldersRes, filesRes] = await Promise.all([
-    supabase
-      .from("folders")
-      .select("id, parent_folder_id, name, slug, description, last_modified, modified_by, is_deleted, order_index")
-      .eq("parent_folder_id", folderId)
-      .eq("is_deleted", false)
-      .order("order_index", { ascending: true, nullsFirst: false })
-      .order("name", { ascending: true }),
-    supabase
-      .from("files")
-      .select("id, folder_id, item_type, name, filename, file_type, file_size, storage_path, url, last_modified, modified_by, is_deleted")
-      .eq("folder_id", folderId)
-      .eq("is_deleted", false)
-      .order("name", { ascending: true }),
-  ]);
+  return withRetry(async () => {
+    const [foldersRes, filesRes] = await Promise.all([
+      supabase
+        .from("folders")
+        .select("id, parent_folder_id, name, slug, description, last_modified, modified_by, is_deleted, order_index")
+        .eq("parent_folder_id", folderId)
+        .eq("is_deleted", false)
+        .order("order_index", { ascending: true, nullsFirst: false })
+        .order("name", { ascending: true }),
+      supabase
+        .from("files")
+        .select("id, folder_id, item_type, name, filename, file_type, file_size, storage_path, url, last_modified, modified_by, is_deleted")
+        .eq("folder_id", folderId)
+        .eq("is_deleted", false)
+        .order("name", { ascending: true }),
+    ]);
 
-  if (foldersRes.error) throw new Error(foldersRes.error.message);
-  if (filesRes.error) throw new Error(filesRes.error.message);
+    if (foldersRes.error) throw new Error(foldersRes.error.message);
+    if (filesRes.error) throw new Error(filesRes.error.message);
 
-  const folderRows = (foldersRes.data ?? []) as DbFolder[];
-  const fileRows = (filesRes.data ?? []) as DbFile[];
+    const folderRows = (foldersRes.data ?? []) as DbFolder[];
+    const fileRows = (filesRes.data ?? []) as DbFile[];
 
-  const modifiedByIds = [
-    ...folderRows.map((f) => f.modified_by).filter(Boolean),
-    ...fileRows.map((f) => f.modified_by).filter(Boolean),
-  ] as string[];
-  const userDisplayNames = await fetchUserDisplayNames(modifiedByIds);
+    const modifiedByIds = [
+      ...folderRows.map((f) => f.modified_by).filter(Boolean),
+      ...fileRows.map((f) => f.modified_by).filter(Boolean),
+    ] as string[];
+    const userDisplayNames = await fetchUserDisplayNames(modifiedByIds);
 
-  const folders = folderRows.map((row) => dbFolderToDataRoomFolder(row, [], [], userDisplayNames));
-  const files = fileRows.map((row) => dbFileToDataRoomFile(row, userDisplayNames));
+    const folders = folderRows.map((row) => dbFolderToDataRoomFolder(row, [], [], userDisplayNames));
+    const files = fileRows.map((row) => dbFileToDataRoomFile(row, userDisplayNames));
 
-  return { folders, files };
+    return { folders, files };
+  });
 }
 
 /** 
