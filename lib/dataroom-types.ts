@@ -36,11 +36,13 @@ export type DataRoomFolder = {
 
 export type DataRoomItem = DataRoomFile | DataRoomFolder;
 
-export function isFolder(item: DataRoomItem): item is DataRoomFolder {
+export function isFolder(item: DataRoomItem | null | undefined): item is DataRoomFolder {
+  if (!item) return false;
   return "children" in item && Array.isArray((item as DataRoomFolder).children);
 }
 
-export function isFile(item: DataRoomItem): item is DataRoomFile {
+export function isFile(item: DataRoomItem | null | undefined): item is DataRoomFile {
+  if (!item) return false;
   return "type" in item && ((item as DataRoomFile).type === "file" || (item as DataRoomFile).type === "link");
 }
 

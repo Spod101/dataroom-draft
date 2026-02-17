@@ -94,7 +94,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           currentSession: userSession,
           sessions: allSessions,
         });
-      } catch (error) {
+      } catch (error: any) {
+        // Ignore AbortError and other expected errors (e.g., from signal cancellation)
+        const errorMessage = error?.message ?? "";
+        const errorName = error?.name ?? "";
+        if (
+          errorName === "AbortError" ||
+          errorMessage.includes("signal is aborted") ||
+          errorMessage.includes("AbortError")
+        ) {
+          // Expected error, don't log
+          if (mounted) {
+            setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
+          }
+          return;
+        }
         console.error('Auth initialization error:', error);
         if (mounted) {
           setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });

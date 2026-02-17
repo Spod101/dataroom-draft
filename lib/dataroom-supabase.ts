@@ -927,3 +927,114 @@ export async function moveFolderToParent(
     },
   });
 }
+
+// ============================================================================
+// Share Links
+// ============================================================================
+
+export type ShareLink = {
+  id: string;
+  token: string;
+  target_type: "file" | "folder";
+  target_id: string;
+  created_by: string;
+  expires_at: string | null;
+  password_hash: string | null;
+  require_email: boolean;
+  require_nda: boolean;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
+ * Generate a secure random token for share links.
+ */
+function generateShareToken(): string {
+  // Generate a URL-safe random token (32 chars)
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let token = "";
+  for (let i = 0; i < 32; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
+/**
+ * Create a new share link for a file or folder.
+ * Always creates a new link (new token each time).
+ */
+export async function createShareLink(params: {
+  targetType: "file" | "folder";
+  targetId: string;
+  expiresAt?: string | null; // ISO date string (date only, end of day)
+}): Promise<ShareLink> {
+  const userId = await getCurrentUserId();
+  if (!userId) throw new Error("Not authenticated");
+
+  // If expiresAt is provided (date only), set to end of day
+  let expiresAtValue: string | null = null;
+  if (params.expiresAt) {
+    const date = new Date(params.expiresAt);
+    date.setHours(23, 59, 59, 999); // End of day
+    expiresAtValue = date.toISOString();
+  }
+
+  const token = generateShareToken();
+  const { data, error } = await supabase
+    .from("share_links")
+    .insert({
+      token,
+      target_type: params.targetType,
+      target_id: params.targetId,
+      created_by: userId,
+      expires_at: expiresAtValue,
+      require_email: true, // Always require email
+      require_nda: false,
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(`Failed to create share link: ${error.message}`);
+
+  await logAuditEvent("share_link.create", params.targetType === "folder" ? "folder" : "file", {
+    targetId: params.targetId,
+    folderId: params.targetType === "folder" ? params.targetId : null,
+    fileId: params.targetType === "file" ? params.targetId : null,
+    details: { token, expiresAt: expiresAtValue },
+  });
+
+  return data as ShareLink;
+}
+
+/**
+ * Revoke a share link by setting revoked_at.
+ */
+export async function revokeShareLink(shareLinkId: string): Promise<void> {
+  const userId = await getCurrentUserId();
+  if (!userId) throw new Error("Not authenticated");
+
+  const { data: link, error: fetchError } = await supabase
+    .from("share_links")
+    .select("target_type, target_id")
+    .eq("id", shareLinkId)
+    .eq("created_by", userId)
+    .maybeSingle();
+
+  if (fetchError || !link) throw new Error("Share link not found or access denied");
+
+  const { error } = await supabase
+    .from("share_links")
+    .update({ revoked_at: new Date().toISOString() })
+    .eq("id", shareLinkId)
+    .eq("created_by", userId);
+
+  if (error) throw new Error(`Failed to revoke share link: ${error.message}`);
+
+  await logAuditEvent("share_link.revoke", link.target_type === "folder" ? "folder" : "file", {
+    targetId: link.target_id,
+    folderId: link.target_type === "folder" ? link.target_id : null,
+    fileId: link.target_type === "file" ? link.target_id : null,
+    details: { shareLinkId },
+  });
+}

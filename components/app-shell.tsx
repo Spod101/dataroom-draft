@@ -8,10 +8,17 @@ import { DataRoomProvider } from "@/contexts/dataroom-context";
 import { AuthGuard } from "@/components/auth-guard";
 
 const AUTH_PATHS = ["/login", "/signup"];
+const PUBLIC_PATHS = ["/share"]; // Public routes that don't need auth
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAuthPage = AUTH_PATHS.some((p) => pathname?.startsWith(p));
+  const isPublicPage = PUBLIC_PATHS.some((p) => pathname?.startsWith(p));
+
+  // Public pages (like share links) don't need auth providers
+  if (isPublicPage) {
+    return <>{children}</>;
+  }
 
   return (
     <AuthProvider>

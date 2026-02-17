@@ -36,22 +36,26 @@ interface FilePreviewModalProps {
   file: DataRoomFile | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  isShareLink?: boolean;
+  initialUrl?: string | null;
 }
 
-/** Resolve preview URL: for stored files use signed URL from Storage, for links use file.url. */
 async function getPreviewUrl(file: DataRoomFile): Promise<string | null> {
   if (file.type === "file" && file.storagePath?.trim()) {
     const { data, error } = await supabase.storage
       .from(STORAGE_BUCKET)
       .createSignedUrl(file.storagePath, SIGNED_URL_EXPIRY_SEC);
-    if (error) return null;
+    if (error) {
+      console.error("Failed to create signed URL for preview", error);
+      return null;
+    }
     return data?.signedUrl ?? null;
   }
   if (file.url?.trim()) return file.url;
   return null;
 }
 
-export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalProps) {
+export function FilePreviewModal({ file, open, onOpenChange, isShareLink = false, initialUrl = null }: FilePreviewModalProps) {
   const [previewError, setPreviewError] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
@@ -59,7 +63,6 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
 
   const previewType = file ? getPreviewType(file) : "unsupported";
 
-  // When modal opens with a file, resolve the preview URL (from storage or link).
   React.useEffect(() => {
     if (!open || !file) {
       setPreviewUrl(null);
@@ -68,20 +71,25 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
     setPreviewError(false);
     setLoading(true);
     setPreviewUrl(null);
+
+    if (initialUrl) {
+      setPreviewUrl(initialUrl);
+      setLoading(false);
+      return;
+    }
+
     getPreviewUrl(file).then((url) => {
       setPreviewUrl(url);
       setLoading(false);
     });
-  }, [open, file?.id, file?.storagePath, file?.url]);
+  }, [open, file?.id, file?.storagePath, file?.url, initialUrl]);
 
-  // Record a "view" event whenever the preview is opened for a file.
   React.useEffect(() => {
-    if (!open || !file) return;
+    if (!open || !file || isShareLink) return;
     trackFileEvent("view", file.id).catch((err) => {
-      // eslint-disable-next-line no-console
       console.error("Failed to record file view event", err);
     });
-  }, [open, file?.id]);
+  }, [open, file?.id, isShareLink]);
 
   const hasUrl = !!previewUrl;
 
@@ -194,7 +202,7 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
       );
     }
 
-    // PDF or PPT (PPT tries to load as PDF)
+    // PDF or PPT
     return (
       <div className="relative w-full h-full">
         {loading && (
@@ -203,9 +211,15 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
           </div>
         )}
         {previewUrl && (
+          (() => {
+            const iframeSrc =
+              isShareLink && previewType === "pdf"
+                ? `${previewUrl}${previewUrl.includes("#") ? "" : "#toolbar=0&navpanes=0&scrollbar=0"}`
+                : previewUrl;
+            return (
           <iframe
             ref={iframeRef}
-            src={previewUrl}
+            src={iframeSrc}
             className="w-full h-full border-0"
             title={file.name}
             onLoad={() => {
@@ -235,6 +249,8 @@ export function FilePreviewModal({ file, open, onOpenChange }: FilePreviewModalP
               setLoading(false);
             }}
           />
+            );
+          })()
         )}
         {previewError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8 bg-background">

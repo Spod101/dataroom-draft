@@ -193,10 +193,7 @@ export default function DynamicDataRoomPage() {
   const [deleteEntries, setDeleteEntries] = React.useState<{ item: DataRoomItem; path: DataRoomPath }[] | null>(null);
   const [deleteName, setDeleteName] = React.useState("");
   const [shareOpen, setShareOpen] = React.useState(false);
-  const [shareLink, setShareLink] = React.useState("");
-  const [shareAccess, setShareAccess] = React.useState<"view" | "edit">("view");
   const [shareItem, setShareItem] = React.useState<DataRoomItem | null>(null);
-  const [shareItemPath, setShareItemPath] = React.useState<DataRoomPath>(path);
   const [newFolderOpen, setNewFolderOpen] = React.useState(false);
   const [moveOpen, setMoveOpen] = React.useState(false);
   const [moveItemObj, setMoveItemObj] = React.useState<DataRoomItem | null>(null);
@@ -266,33 +263,10 @@ export default function DynamicDataRoomPage() {
     setDeleteOpen(true);
   };
 
-  const sharingToAccess = (sharing: string | undefined): "view" | "edit" => {
-    if (!sharing) return "view";
-    const s = sharing.toLowerCase();
-    if (s.includes("edit")) return "edit";
-    return "view";
-  };
 
-  const openShare = (item: DataRoomItem, itemPath: DataRoomPath) => {
-    setShareItemPath(itemParentPath(item, itemPath));
-    const base = typeof window !== "undefined" ? window.location.origin : "";
-    const pathPrefix = itemPath.length ? itemPath.join("/") : "";
-    if (isFolder(item))
-      setShareLink(pathPrefix ? `${base}/dataroom/${pathPrefix}` : `${base}/dataroom/${item.slug}`);
-    else setShareLink(pathPrefix ? `${base}/dataroom/${pathPrefix}?file=${item.id}` : `${base}/dataroom?file=${item.id}`);
+  const openShare = (item: DataRoomItem) => {
     setShareItem(item);
-    setShareAccess(sharingToAccess(item.sharing ?? ""));
     setShareOpen(true);
-  };
-
-  const handleShareAccessChange = (access: "view" | "edit") => {
-    setShareAccess(access);
-    if (!shareItem) return;
-    const label =
-      access === "edit"
-        ? "Anyone with link (edit)"
-        : "Anyone with link (view)";
-    setSharing(shareItemPath, shareItem.id, label);
   };
 
   const handleDownload = (file: DataRoomFile) => {
@@ -739,10 +713,10 @@ export default function DynamicDataRoomPage() {
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
-                              onSelect={(e) => { e.preventDefault(); openShare(item, rowPath); }}
+                              onSelect={(e) => { e.preventDefault(); openShare(item); }}
                             >
                               <LinkIconLucide className="h-4 w-4 mr-2" />
-                              Copy Link
+                              Share Link
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               className="focus:bg-primary/10 focus:text-primary"
@@ -850,7 +824,7 @@ export default function DynamicDataRoomPage() {
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="focus:bg-primary/10 focus:text-primary"
-                                onSelect={(e) => { e.preventDefault(); openShare(item, rowPath); }}
+                                onSelect={(e) => { e.preventDefault(); openShare(item); }}
                               >
                                 <LinkIconLucide className="h-4 w-4 mr-2" />
                                 Copy Link
@@ -970,10 +944,7 @@ export default function DynamicDataRoomPage() {
       <ShareLinkModal
         open={shareOpen}
         onOpenChange={setShareOpen}
-        link={shareLink}
-        title="Share link"
-        access={shareAccess}
-        onAccessChange={handleShareAccessChange}
+        item={shareItem}
       />
 
       {(moveItemObj || (moveItems && moveItems.length > 0)) && (
