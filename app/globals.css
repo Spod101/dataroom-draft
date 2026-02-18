@@ -116,6 +116,48 @@
   --sidebar-ring: oklch(0.553 0.013 58.071);
 }
 
+/* Auth pages: visible background pattern (e.g. highlysucceed.com style) */
+.auth-page-bg {
+  background-color: oklch(0.98 0.01 95);
+  background-image:
+    radial-gradient(circle at 30% 20%, oklch(0.94 0.04 90 / 0.5) 0%, transparent 45%),
+    radial-gradient(circle at 70% 80%, oklch(0.95 0.03 92 / 0.4) 0%, transparent 45%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 28px,
+      oklch(0.92 0.04 88 / 0.35) 28px,
+      oklch(0.92 0.04 88 / 0.35) 29px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 28px,
+      oklch(0.92 0.04 88 / 0.35) 28px,
+      oklch(0.92 0.04 88 / 0.35) 29px
+    );
+}
+.dark .auth-page-bg {
+  background-color: oklch(0.14 0.015 50);
+  background-image:
+    radial-gradient(circle at 30% 20%, oklch(0.22 0.04 85 / 0.4) 0%, transparent 45%),
+    radial-gradient(circle at 70% 80%, oklch(0.2 0.03 88 / 0.35) 0%, transparent 45%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 28px,
+      oklch(0.22 0.03 88 / 0.25) 28px,
+      oklch(0.22 0.03 88 / 0.25) 29px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 28px,
+      oklch(0.22 0.03 88 / 0.25) 28px,
+      oklch(0.22 0.03 88 / 0.25) 29px
+    );
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

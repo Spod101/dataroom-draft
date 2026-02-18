@@ -7,7 +7,7 @@ import { AuthProvider } from "@/contexts/auth-context";
 import { DataRoomProvider } from "@/contexts/dataroom-context";
 import { AuthGuard } from "@/components/auth-guard";
 
-const AUTH_PATHS = ["/login", "/signup"];
+const AUTH_PATHS = ["/login" /* "/signup" signup disabled */];
 const PUBLIC_PATHS = ["/share"]; // Public routes that don't need auth
 
 export function AppShell({ children }: { children: React.ReactNode }) {

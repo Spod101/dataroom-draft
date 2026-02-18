@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 
-const PUBLIC_ROUTES = ['/login', '/signup'];
+const PUBLIC_ROUTES = ['/login', '/signup']; // signup page still reachable but shows disabled UI
 const PUBLIC_PREFIX_ROUTES = ['/share']; // Routes that start with this prefix are public
 const ADMIN_ONLY_ROUTES = ['/permissions', '/audit', '/insights'];
 

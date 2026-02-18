@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/auth/password-input";
 import {
   Card,
   CardContent,
@@ -85,17 +86,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-2xl">Sign in</CardTitle>
-          <CardDescription>
+    <div className="min-h-screen flex items-center justify-center auth-page-bg px-4 py-12">
+      <Card className="w-full max-w-sm shadow-lg border-0 bg-card/95 backdrop-blur-sm">
+        <CardHeader className="space-y-2 text-center pb-2 pt-8 px-8">
+          <CardTitle className="text-2xl font-semibold tracking-tight">Sign in</CardTitle>
+          <CardDescription className="text-muted-foreground">
             Enter your credentials to access the data room
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
-            <FieldGroup>
+          <CardContent className="space-y-5 px-8 pb-6">
+            <FieldGroup className="space-y-5">
               <Field>
                 <FieldLabel htmlFor="email">Email</FieldLabel>
                 <Input
@@ -107,19 +108,20 @@ export default function LoginPage() {
                   autoComplete="email"
                   required
                   disabled={loading}
+                  className="h-10"
                 />
               </Field>
               <Field>
                 <FieldLabel htmlFor="password">Password</FieldLabel>
-                <Input
+                <PasswordInput
                   id="password"
-                  type="password"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
                   required
                   disabled={loading}
+                  className="h-10"
                 />
               </Field>
             </FieldGroup>
@@ -127,7 +129,7 @@ export default function LoginPage() {
               <FieldError className="text-sm">{error}</FieldError>
             )}
             {showEmailNotConfirmed && (
-              <div className="bg-muted/50 border border-border rounded-md p-3 space-y-3">
+              <div className="bg-muted/50 border border-border rounded-lg p-4 space-y-3">
                 <p className="text-sm text-muted-foreground">
                   Please check your email inbox for a confirmation link. If you haven&apos;t received it, you can request a new one.
                 </p>
@@ -149,16 +151,18 @@ export default function LoginPage() {
               </div>
             )}
           </CardContent>
-          <CardFooter className="flex flex-col gap-4">
-            <Button type="submit" className="w-full" disabled={loading}>
+          <CardFooter className="flex flex-col gap-5 px-8 pb-8 pt-2">
+            <Button type="submit" className="w-full h-10" disabled={loading}>
               {loading ? "Signing in…" : "Sign in"}
             </Button>
+            {/* Signup disabled
             <p className="text-muted-foreground text-center text-xs">
               Don&apos;t have an account?{" "}
               <Link href="/signup" className="text-primary underline-offset-4 hover:underline">
                 Sign up
               </Link>
             </p>
+            */}
           </CardFooter>
         </form>
       </Card>
