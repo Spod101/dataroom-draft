@@ -21,6 +21,8 @@ import {
   ChevronRightIcon,
   ChevronDownIcon,
   UserPlusIcon,
+  PencilIcon,
+  TrashIcon,
 } from "lucide-react";
 
 import { supabase } from "@/lib/supabase";
@@ -51,6 +53,16 @@ import {
   FieldLabel,
   FieldGroup,
 } from "@/components/ui/field";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { InputDialog } from "@/components/dataroom/input-dialog";
+import { ConfirmDialog } from "@/components/dataroom/confirm-dialog";
+import { useToast } from "@/components/ui/toast";
+import { updateUserName, deleteUser } from "./actions";
 
 type PermissionFlags = { edit: boolean };
 type PermissionSet = Record<string, PermissionFlags>;
@@ -110,6 +122,7 @@ function buildPermissionItems(rootFolders: DataRoomFolder[]): {
 export default function PermissionsPage() {
   const { profile, loading } = useAuth();
   const isAdmin = profile?.role === "admin";
+  const toast = useToast();
 
   const [users, setUsers] = React.useState<PermissionUser[]>([]);
   const [selectedUser, setSelectedUser] = React.useState<PermissionUser | null>(null);
@@ -134,6 +147,12 @@ export default function PermissionsPage() {
   const [newUserRole, setNewUserRole] = React.useState<"user" | "admin">("user");
   const [addUserError, setAddUserError] = React.useState<string | null>(null);
   const [addingUser, setAddingUser] = React.useState(false);
+
+  // Edit / Delete user dialogs
+  const [editUserOpen, setEditUserOpen] = React.useState(false);
+  const [editUser, setEditUser] = React.useState<PermissionUser | null>(null);
+  const [deleteUserOpen, setDeleteUserOpen] = React.useState(false);
+  const [deleteUserTarget, setDeleteUserTarget] = React.useState<PermissionUser | null>(null);
 
   const formatAddUserErrorMessage = (err: unknown): string => {
     const anyErr = err as { message?: string; code?: string } | null | undefined;
@@ -432,6 +451,42 @@ export default function PermissionsPage() {
     }
   };
 
+  const handleEditUserName = async (newName: string) => {
+    if (!editUser) return;
+    const { error } = await updateUserName(editUser.id, newName);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setUsers((prev) =>
+      prev.map((u) => (u.id === editUser.id ? { ...u, name: newName.trim() } : u))
+    );
+    if (selectedUser?.id === editUser.id) {
+      setSelectedUser((prev) =>
+        prev && prev.id === editUser.id ? { ...prev, name: newName.trim() } : prev
+      );
+    }
+    setEditUserOpen(false);
+    setEditUser(null);
+    toast.success("User name updated");
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteUserTarget) return;
+    const { error } = await deleteUser(deleteUserTarget.id);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setUsers((prev) => prev.filter((u) => u.id !== deleteUserTarget.id));
+    if (selectedUser?.id === deleteUserTarget.id) {
+      setSelectedUser(null);
+    }
+    setDeleteUserOpen(false);
+    setDeleteUserTarget(null);
+    toast.success("User deleted");
+  };
+
   const renderFileRow = (item: PermissionItem, level: number = 0) => {
     const isExpanded = expandedFolders.includes(item.id);
     const hasChildren = !!item.children && item.children.length > 0;
@@ -718,9 +773,45 @@ export default function PermissionsPage() {
                       {user.role}
                     </p>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
-                    <MoreHorizontalIcon className="h-4 w-4" />
-                  </Button>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 flex-shrink-0"
+                        >
+                          <MoreHorizontalIcon className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          className="focus:bg-primary/10 focus:text-primary"
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            setEditUser(user);
+                            setEditUserOpen(true);
+                          }}
+                        >
+                          <PencilIcon className="h-4 w-4 mr-2" />
+                          Edit user name
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="focus:bg-destructive/10 focus:text-destructive"
+                          disabled={user.id === profile?.id}
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            if (user.id === profile?.id) return;
+                            setDeleteUserTarget(user);
+                            setDeleteUserOpen(true);
+                          }}
+                        >
+                          <TrashIcon className="h-4 w-4 mr-2" />
+                          Delete user
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               ))}
             </div>
@@ -771,9 +862,45 @@ export default function PermissionsPage() {
                       {user.role}
                     </p>
                   </div>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
-                    <MoreHorizontalIcon className="h-4 w-4" />
-                  </Button>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 flex-shrink-0"
+                        >
+                          <MoreHorizontalIcon className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          className="focus:bg-primary/10 focus:text-primary"
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            setEditUser(user);
+                            setEditUserOpen(true);
+                          }}
+                        >
+                          <PencilIcon className="h-4 w-4 mr-2" />
+                          Edit user name
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="focus:bg-destructive/10 focus:text-destructive"
+                          disabled={user.id === profile?.id}
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            if (user.id === profile?.id) return;
+                            setDeleteUserTarget(user);
+                            setDeleteUserOpen(true);
+                          }}
+                        >
+                          <TrashIcon className="h-4 w-4 mr-2" />
+                          Delete user
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               ))}
             </div>
@@ -828,6 +955,35 @@ export default function PermissionsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <InputDialog
+        open={editUserOpen}
+        onOpenChange={(open) => {
+          setEditUserOpen(open);
+          if (!open) setEditUser(null);
+        }}
+        title="Edit user name"
+        description="Enter the new name for this user."
+        label="Name"
+        placeholder="User name"
+        defaultValue={editUser?.name ?? ""}
+        submitLabel="Save"
+        onSubmit={handleEditUserName}
+      />
+
+      <ConfirmDialog
+        open={deleteUserOpen}
+        onOpenChange={(open) => {
+          setDeleteUserOpen(open);
+          if (!open) setDeleteUserTarget(null);
+        }}
+        title="Delete user"
+        description={`Are you sure you want to delete ${deleteUserTarget?.name ?? "this user"}? This will remove their account and all their permissions. This action cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="destructive"
+        onConfirm={handleDeleteUser}
+      />
     </SidebarInset>
   );
 }
