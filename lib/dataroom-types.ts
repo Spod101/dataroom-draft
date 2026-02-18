@@ -32,6 +32,8 @@ export type DataRoomFolder = {
   children: DataRoomItem[];
   /** Number of direct children (folders + files). Useful before children are lazily loaded. */
   itemCount?: number;
+  /** Number of direct subfolders. Used to show expand/collapse icon before children are loaded. */
+  subfolderCount?: number;
   /** Order index for sidebar display (lower = higher in list) */
   orderIndex?: number;
 };

@@ -79,10 +79,15 @@ function dbFolderToDataRoomFolder(
   childFolders: DataRoomFolder[],
   childFiles: DataRoomFile[],
   userDisplayNames: Map<string, string>,
-  itemCountOverride?: number
+  itemCountOverride?: number,
+  subfolderCountOverride?: number
 ): DataRoomFolder {
   const children = [...childFolders, ...childFiles];
   const itemCount = typeof itemCountOverride === "number" ? itemCountOverride : children.length;
+  const subfolderCount =
+    typeof subfolderCountOverride === "number"
+      ? subfolderCountOverride
+      : childFolders.length;
 
   return {
     id: row.id,
@@ -95,6 +100,7 @@ function dbFolderToDataRoomFolder(
     sharing: "Shared",
     children,
     itemCount,
+    subfolderCount,
     orderIndex: row.order_index ?? undefined,
   };
 }
@@ -116,11 +122,6 @@ async function fetchUserDisplayNames(userIds: string[]): Promise<Map<string, str
   return map;
 }
 
-/** 
- * Fetch only root-level folders (shallow load).
- * Use this for initial page load - much faster than fetchDataRoomTree.
- * Wrapped with retry for resilience to network failures (e.g. after tab idle).
- */
 export async function fetchRootFolders(): Promise<DataRoomFolder[]> {
   return withRetry(async () => {
     const { data: folders, error: foldersError } = await supabase
@@ -158,10 +159,12 @@ export async function fetchRootFolders(): Promise<DataRoomFolder[]> {
     const childFileRows = (childFilesRes.data ?? []) as { folder_id: string }[];
 
     const itemCounts = new Map<string, number>();
+    const subfolderCounts = new Map<string, number>();
     for (const row of childFolderRows) {
       const parentId = row.parent_folder_id;
       if (!parentId) continue;
       itemCounts.set(parentId, (itemCounts.get(parentId) ?? 0) + 1);
+      subfolderCounts.set(parentId, (subfolderCounts.get(parentId) ?? 0) + 1);
     }
     for (const row of childFileRows) {
       const folderId = row.folder_id;
@@ -171,16 +174,17 @@ export async function fetchRootFolders(): Promise<DataRoomFolder[]> {
     const userDisplayNames = await fetchUserDisplayNames(modifiedByIds);
 
     return folderRows.map((row) =>
-      dbFolderToDataRoomFolder(row, [], [], userDisplayNames, itemCounts.get(row.id) ?? 0)
+      dbFolderToDataRoomFolder(
+        row,
+        [],
+        [],
+        userDisplayNames,
+        itemCounts.get(row.id) ?? 0,
+        subfolderCounts.get(row.id) ?? 0
+      )
     );
   });
 }
-
-/**
- * Fetch children (subfolders + files) for a specific folder.
- * Use this when user navigates into a folder.
- * Wrapped with retry for resilience to network failures (e.g. after tab idle).
- */
 export async function fetchFolderChildren(folderId: string): Promise<{ folders: DataRoomFolder[]; files: DataRoomFile[] }> {
   return withRetry(async () => {
     const [foldersRes, filesRes] = await Promise.all([
@@ -210,9 +214,10 @@ export async function fetchFolderChildren(folderId: string): Promise<{ folders: 
       ...fileRows.map((f) => f.modified_by).filter(Boolean),
     ] as string[];
 
-    // Pre-compute item counts for each child folder we are returning.
+    // Pre-compute item counts and subfolder counts for each child folder we are returning.
     const childFolderIds = folderRows.map((f) => f.id);
     let itemCounts = new Map<string, number>();
+    let subfolderCounts = new Map<string, number>();
     if (childFolderIds.length > 0) {
       const [grandchildFoldersRes, grandchildFilesRes] = await Promise.all([
         supabase
@@ -234,10 +239,12 @@ export async function fetchFolderChildren(folderId: string): Promise<{ folders: 
       const grandchildFileRows = (grandchildFilesRes.data ?? []) as { folder_id: string }[];
 
       itemCounts = new Map<string, number>();
+      subfolderCounts = new Map<string, number>();
       for (const row of grandchildFolderRows) {
         const parentId = row.parent_folder_id;
         if (!parentId) continue;
         itemCounts.set(parentId, (itemCounts.get(parentId) ?? 0) + 1);
+        subfolderCounts.set(parentId, (subfolderCounts.get(parentId) ?? 0) + 1);
       }
       for (const row of grandchildFileRows) {
         const folderId = row.folder_id;
@@ -248,7 +255,14 @@ export async function fetchFolderChildren(folderId: string): Promise<{ folders: 
     const userDisplayNames = await fetchUserDisplayNames(modifiedByIds);
 
     const folders = folderRows.map((row) =>
-      dbFolderToDataRoomFolder(row, [], [], userDisplayNames, itemCounts.get(row.id) ?? 0)
+      dbFolderToDataRoomFolder(
+        row,
+        [],
+        [],
+        userDisplayNames,
+        itemCounts.get(row.id) ?? 0,
+        subfolderCounts.get(row.id) ?? 0
+      )
     );
     const files = fileRows.map((row) => dbFileToDataRoomFile(row, userDisplayNames));
 

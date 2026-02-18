@@ -46,7 +46,7 @@ type ContextMenuState = {
 export function DataRoomNav() {
   const pathname = usePathname();
   const toast = useToast();
-  const { state, getChildren, addFolder, renameItem, deleteItem, reorderFolders, moveFolderToFolder } =
+  const { state, getChildren, addFolder, renameItem, deleteItem, reorderFolders, moveFolderToFolder, loadFolderChildren } =
     useDataRoom();
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set());
   const [contextMenu, setContextMenu] = React.useState<ContextMenuState | null>(
@@ -291,6 +291,7 @@ export function DataRoomNav() {
             pathname={pathname}
             expanded={expanded}
             toggleExpanded={toggleExpanded}
+            loadFolderChildren={loadFolderChildren}
             onContextMenu={(e, path, f) => {
               e.preventDefault();
               e.stopPropagation();
@@ -476,6 +477,7 @@ function NavFolder({
   pathname,
   expanded,
   toggleExpanded,
+  loadFolderChildren,
   onContextMenu,
   draggedId,
   dragOverId,
@@ -491,6 +493,7 @@ function NavFolder({
   pathname: string;
   expanded: Set<string>;
   toggleExpanded: (key: string) => void;
+  loadFolderChildren: (folderId: string) => Promise<void>;
   onContextMenu: (
     e: React.MouseEvent,
     path: DataRoomPath,
@@ -514,19 +517,12 @@ function NavFolder({
       .sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0));
   }, [folder.children]);
   const hasChildren = childFolders.length > 0;
+  const hasSubfolders = hasChildren || (folder.subfolderCount ?? 0) > 0;
   const isActive =
     pathname === href || (pathname.startsWith(href + "/") && pathname !== href);
 
-  const indentClass =
-    depth === 0
-      ? "pl-0"
-      : depth === 1
-        ? "pl-2"
-        : depth === 2
-          ? "pl-4"
-          : depth === 3
-            ? "pl-6"
-            : "pl-8";
+  // Progressive indentation: 12px per level so deep folder names stay readable
+  const indentStyle = depth > 0 ? { paddingLeft: depth * 12 } : undefined;
 
   const isDragging = draggedId === folder.id;
   const isDragOver = dragOverId === folder.id;
@@ -547,17 +543,23 @@ function NavFolder({
     >
       <div
         className={cn(
-          "flex w-full min-w-0 items-center gap-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:pl-0 group-data-[collapsible=icon]:gap-0",
-          indentClass
+          "flex w-full min-w-0 items-center gap-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:pl-0 group-data-[collapsible=icon]:gap-0"
         )}
+        style={indentStyle}
       >
         <button
           type="button"
           className="flex size-6 shrink-0 items-center justify-center rounded p-0 hover:bg-sidebar-accent group-data-[collapsible=icon]:hidden"
-          aria-expanded={hasChildren ? isExpanded : undefined}
-          onClick={() => hasChildren && toggleExpanded(key)}
+          aria-expanded={hasSubfolders ? isExpanded : undefined}
+          onClick={async () => {
+            if (!hasSubfolders) return;
+            if (!hasChildren && (folder.subfolderCount ?? 0) > 0) {
+              await loadFolderChildren(folder.id);
+            }
+            toggleExpanded(key);
+          }}
         >
-          {hasChildren ? (
+          {hasSubfolders ? (
             <ChevronRightIcon
               className={cn("size-4 shrink-0 transition-transform", isExpanded && "rotate-90")}
             />
@@ -589,6 +591,7 @@ function NavFolder({
               pathname={pathname}
               expanded={expanded}
               toggleExpanded={toggleExpanded}
+              loadFolderChildren={loadFolderChildren}
               onContextMenu={onContextMenu}
               draggedId={draggedId}
               dragOverId={dragOverId}

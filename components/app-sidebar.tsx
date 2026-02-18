@@ -143,10 +143,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {/* Data Room folder tree */}
         <SidebarGroup>
           <SidebarGroupLabel>Data Room</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <DataRoomNav />
-            <div className="mt-1 px-2 flex justify-start group-data-[collapsible=icon]:justify-center">
-              <AddNavigationButton />
+          <SidebarGroupContent className="overflow-x-auto overflow-y-visible min-w-0">
+            <div className="min-w-max">
+              <DataRoomNav />
+              <div className="mt-1 px-2 flex justify-start group-data-[collapsible=icon]:justify-center">
+                <AddNavigationButton />
+              </div>
             </div>
           </SidebarGroupContent>
         </SidebarGroup>
