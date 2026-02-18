@@ -103,12 +103,31 @@ export default function AuditPage() {
   const [periodFilter, setPeriodFilter] = React.useState<PeriodFilterValue>("last_30d");
   const [startDate, setStartDate] = React.useState<string>("");
   const [endDate, setEndDate] = React.useState<string>("");
+  const [dateError, setDateError] = React.useState<string | null>(null);
 
   const [rows, setRows] = React.useState<AuditDisplayRow[]>([]);
   const [members, setMembers] = React.useState<string[]>([]);
   const [actions, setActions] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+
+  const handleStartDateChange = (value: string) => {
+    if (value && endDate && value > endDate) {
+      setDateError("Start date cannot be after end date.");
+      return;
+    }
+    setDateError(null);
+    setStartDate(value);
+  };
+
+  const handleEndDateChange = (value: string) => {
+    if (value && startDate && value < startDate) {
+      setDateError("End date cannot be earlier than start date.");
+      return;
+    }
+    setDateError(null);
+    setEndDate(value);
+  };
 
   React.useEffect(() => {
     async function loadAudit() {
@@ -473,7 +492,8 @@ export default function AuditPage() {
                 type="date"
                 className="h-9 rounded-lg border border-primary/20 bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/40"
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                max={endDate || undefined}
+                onChange={(e) => handleStartDateChange(e.target.value)}
               />
             </div>
 
@@ -483,9 +503,16 @@ export default function AuditPage() {
                 type="date"
                 className="h-9 rounded-lg border border-primary/20 bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:border-primary/40"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                min={startDate || undefined}
+                onChange={(e) => handleEndDateChange(e.target.value)}
               />
             </div>
+
+            {dateError && (
+              <div className="w-full text-xs text-destructive mt-1">
+                {dateError}
+              </div>
+            )}
 
             <div className="ml-auto">
               <DownloadButton onClick={handleDownloadPDF} />
