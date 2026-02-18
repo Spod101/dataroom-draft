@@ -2,7 +2,7 @@ import JSZip from "jszip";
 import { supabase } from "@/lib/supabase";
 import type { DataRoomFile, DataRoomFolder, DataRoomPath } from "@/lib/dataroom-types";
 import { isFolder, isFile } from "@/lib/dataroom-types";
-import { logAuditEvent, trackFileEvent } from "@/lib/dataroom-supabase";
+import { fetchDataRoomTree, logAuditEvent, trackFileEvent } from "@/lib/dataroom-supabase";
 
 const BUCKET_NAME = "data-room";
 const SIGNED_URL_EXPIRY_SEC = 600; // 10 minutes
@@ -98,7 +98,14 @@ export async function downloadFolderZip(
   rootFolders: DataRoomFolder[],
   folderName: string
 ): Promise<void> {
-  const { files, folderPaths } = collectFilesAndFoldersInFolder(rootFolders, folderPath);
+  let treeRootFolders = rootFolders;
+  try {
+    treeRootFolders = await fetchDataRoomTree();
+  } catch (e) {
+    console.error("Failed to fetch full data room tree for ZIP download; falling back to loaded tree", e);
+  }
+
+  const { files, folderPaths } = collectFilesAndFoldersInFolder(treeRootFolders, folderPath);
   const filesToZip = files.filter((e) => e.file.type === "file" && e.file.storagePath?.trim());
   if (filesToZip.length === 0 && folderPaths.length === 0) {
     throw new Error("This folder is empty.");
@@ -120,6 +127,16 @@ export async function downloadFolderZip(
 
   for (const { file, relativePath } of filesToZip) {
     const path = relativePath.replace(/^\/+/, "").replace(/\/+/g, "/");
+    try {
+      await trackFileEvent("download", file.id);
+      await logAuditEvent("file.download", "file", {
+        targetId: file.id,
+        fileId: file.id,
+        details: { name: file.name, via: "folder_download" },
+      });
+    } catch (e) {
+      console.error("Failed to record file download analytics/audit (folder ZIP)", e);
+    }
     const { data, error } = await supabase.storage.from(BUCKET_NAME).download(file.storagePath!);
     if (error || !data) {
       throw new Error(`Failed to download "${file.name}": ${error?.message ?? "Unknown error"}`);
