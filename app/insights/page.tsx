@@ -43,6 +43,13 @@ type UserFileStats = {
   downloads: number;
 };
 
+function getLocalDateKey(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export default function InsightsPage() {
   const { profile, loading: authLoading } = useAuth();
   const isAdmin = profile?.role === "admin";
@@ -70,23 +77,38 @@ export default function InsightsPage() {
       setLoading(true);
       setError(null);
       try {
-        const { data: events, error: eventsError } = await supabase
-          .from("file_events")
-          .select("id, created_at, event_type, file_id, user_id, folder_id, details")
-          .order("created_at", { ascending: false })
-          .limit(1000);
+        const [{ data: events, error: eventsError }, { data: filesData, error: filesError }, { data: foldersData, error: foldersError }] =
+          await Promise.all([
+            supabase
+              .from("file_events")
+              .select("id, created_at, event_type, file_id, user_id, folder_id, details")
+              .order("created_at", { ascending: false })
+              .limit(1000),
+            supabase
+              .from("files")
+              .select("id, name, folder_id")
+              .eq("is_deleted", false),
+            supabase.from("folders").select("id, name, parent_folder_id"),
+          ]);
 
         if (eventsError) throw eventsError;
+        if (filesError) throw filesError;
+        if (foldersError) throw foldersError;
 
         const ev = (events ?? []) as any[];
-        if (!ev.length) {
+        const files = (filesData ?? []) as any[];
+        const folders = (foldersData ?? []) as any[];
+
+        if (!files.length) {
           setFileSummaries([]);
           setUserStats([]);
           setSelectedFileId(null);
+          setPerFileUserMap(null);
+          setIdentityLabelMap(null);
+          setPerFileViewSeries(undefined);
           return;
         }
 
-        const fileIds = Array.from(new Set(ev.map((e) => e.file_id as string)));
         const userIds = Array.from(
           new Set(
             ev
@@ -95,21 +117,13 @@ export default function InsightsPage() {
           )
         );
 
-        const [filesRes, usersRes, foldersRes] = await Promise.all([
-          supabase.from("files").select("id, name, folder_id").in("id", fileIds),
-          userIds.length
-            ? supabase.from("users").select("id, name").in("id", userIds)
-            : Promise.resolve({ data: [], error: null }),
-          supabase.from("folders").select("id, name, parent_folder_id"),
-        ]);
+        const usersRes = userIds.length
+          ? await supabase.from("users").select("id, name").in("id", userIds)
+          : { data: [], error: null as null };
 
-        if (filesRes.error) throw filesRes.error;
         if (usersRes.error) throw usersRes.error;
-        if (foldersRes.error) throw foldersRes.error;
 
-        const files = (filesRes.data ?? []) as any[];
         const users = (usersRes.data ?? []) as any[];
-        const folders = (foldersRes.data ?? []) as any[];
 
         const fileMap = new Map<string, { name: string; folderId: string | null }>();
         for (const f of files) {
@@ -195,7 +209,7 @@ export default function InsightsPage() {
 
             // Track views over time (by date) for charts
             const createdAt = new Date(e.created_at as string);
-            const dateKey = createdAt.toISOString().slice(0, 10); // YYYY-MM-DD
+            const dateKey = getLocalDateKey(createdAt); // YYYY-MM-DD (local calendar)
             const fileTimeline =
               perFileViewTimeline.get(fid) ?? new Map<string, number>();
             const currentCount = fileTimeline.get(dateKey) ?? 0;
@@ -212,9 +226,8 @@ export default function InsightsPage() {
         }
 
         const summaries: FileSummary[] = [];
-        for (const [fileId, stats] of perFile.entries()) {
-          const meta = fileMap.get(fileId);
-          if (!meta) continue;
+        for (const [fileId, meta] of fileMap.entries()) {
+          const stats = perFile.get(fileId) ?? { views: 0, downloads: 0 };
           const folderPath = getFolderPath(meta.folderId);
           summaries.push({
             id: fileId,
@@ -314,7 +327,7 @@ export default function InsightsPage() {
       for (let offset = days - 1; offset >= 0; offset -= 1) {
         const d = new Date(today);
         d.setDate(today.getDate() - offset);
-        const isoKey = d.toISOString().slice(0, 10);
+        const isoKey = getLocalDateKey(d);
         const views = countsByDate.get(isoKey) ?? 0;
         const label = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
         result.push({ date: isoKey, label, views });
