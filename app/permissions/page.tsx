@@ -331,6 +331,7 @@ export default function PermissionsPage() {
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (addingUser) return;
     setAddUserError(null);
     setAddingUser(true);
 
@@ -359,12 +360,26 @@ export default function PermissionsPage() {
       }
 
       // Create user profile
-      const { error: profileError } = await supabase.from("users").insert({
-        id: authData.user.id,
-        name: newUserName.trim() || newUserEmail.trim().split("@")[0],
-        email: authData.user.email || newUserEmail.trim(),
-        role: newUserRole,
-      });
+      // Always use the provided name if it exists, only fall back to email prefix if name is empty
+      const trimmedName = newUserName.trim();
+      const trimmedEmail = newUserEmail.trim();
+      // Extract name from email (part before @) only if name is not provided
+      const emailNameFallback = trimmedEmail.includes("@") 
+        ? trimmedEmail.split("@")[0] 
+        : trimmedEmail.split(".")[0]; // Fallback for emails without @ (e.g., "ctamis.gmail.com" -> "ctamis")
+      const nameToUse = trimmedName || emailNameFallback;
+      
+      const { error: profileError } = await supabase
+        .from("users")
+        .upsert(
+          {
+            id: authData.user.id,
+            name: nameToUse,
+            email: authData.user.email || trimmedEmail,
+            role: newUserRole,
+          },
+          { onConflict: "id" }
+        );
 
       if (profileError) {
         setAddUserError(profileError.message);
