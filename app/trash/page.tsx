@@ -26,6 +26,7 @@ import { Trash2Icon, RotateCwIcon } from "lucide-react";
 import { listTrash, restoreFolder, restoreFile, hardDeleteFolder, hardDeleteFile, type TrashSummary } from "@/lib/dataroom-supabase";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/contexts/auth-context";
+import { useDataRoom } from "@/contexts/dataroom-context";
 import { FilterSelect } from "@/components/dataroom/filter-select";
 import { TablePagination } from "@/components/ui/table-pagination";
 
@@ -45,6 +46,7 @@ export default function TrashPage() {
   // Admins can filter, regular users always see only their deletions
   const [filterBy, setFilterBy] = React.useState<"all" | "mine">(isAdmin ? "all" : "mine");
   const { success, error: toastError } = useToast();
+  const { refresh: refreshDataRoom } = useDataRoom();
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -68,6 +70,7 @@ export default function TrashPage() {
       await restoreFolder(id);
       success("Folder restored");
       void load();
+      await refreshDataRoom();
     } catch (e) {
       toastError(e instanceof Error ? e.message : "Failed to restore folder");
     }
@@ -78,6 +81,7 @@ export default function TrashPage() {
       await restoreFile(id);
       success("File restored");
       void load();
+      await refreshDataRoom();
     } catch (e) {
       toastError(e instanceof Error ? e.message : "Failed to restore file");
     }
@@ -181,6 +185,7 @@ export default function TrashPage() {
       success(count === 1 ? "Item restored" : `${count} items restored`);
       clearSelection();
       void load();
+      await refreshDataRoom();
     } catch (e) {
       toastError(e instanceof Error ? e.message : "Failed to restore");
     }
