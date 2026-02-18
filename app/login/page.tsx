@@ -87,7 +87,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center auth-page-bg px-4 py-12">
-      <Card className="w-full max-w-sm shadow-lg border-0 bg-card/95 backdrop-blur-sm">
+      <Card className="w-full max-w-md shadow-lg border-0 bg-card/95 backdrop-blur-sm">
         <CardHeader className="space-y-2 text-center pb-2 pt-8 px-8">
           <CardTitle className="text-2xl font-semibold tracking-tight">Sign in</CardTitle>
           <CardDescription className="text-muted-foreground">
