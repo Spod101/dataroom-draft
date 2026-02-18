@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { withRetry } from "@/lib/retry-utils";
 import type { DataRoomFolder, DataRoomFile } from "@/lib/dataroom-types";
 import { slugFromName, uniqueSlug } from "@/lib/dataroom-types";
-import { preserveExtensionOnRename } from "@/lib/dataroom-utils";
+import { preserveExtensionOnRename, getUniqueFolderName } from "@/lib/dataroom-utils";
 
 const BUCKET_NAME = "data-room";
 
@@ -492,14 +492,25 @@ export async function createFolder(
     if (role !== "admin") throw new Error("You don't have permission to create root folders.");
   }
 
-  const slug = uniqueSlug(slugFromName(name), existingSiblingSlugs);
+  // Auto-increment folder name if duplicate (e.g. "sample sub" -> "sample sub (1)").
+  const { data: siblings } = await supabase
+    .from("folders")
+    .select("name")
+    .eq("parent_folder_id", parentFolderId ?? null)
+    .eq("is_deleted", false);
+  const takenNames = new Set(
+    (siblings ?? []).map((row: { name: string }) => row.name.trim().toLowerCase())
+  );
+  const finalName = getUniqueFolderName(name, takenNames);
+
+  const slug = uniqueSlug(slugFromName(finalName), existingSiblingSlugs);
   const now = new Date().toISOString();
   const modifiedBy = await getCurrentUserId();
   const { data, error } = await supabase
     .from("folders")
     .insert({
       parent_folder_id: parentFolderId,
-      name,
+      name: finalName,
       slug,
       last_modified: now,
       modified_by: modifiedBy,
@@ -512,7 +523,7 @@ export async function createFolder(
   await logAuditEvent("folder.create", "folder", {
     targetId: row.id,
     folderId: row.id,
-    details: { name },
+    details: { name: finalName },
   });
   const userDisplayNames = modifiedBy ? await fetchUserDisplayNames([modifiedBy]) : new Map<string, string>();
   return dbFolderToDataRoomFolder(row, [], [], userDisplayNames, 0);

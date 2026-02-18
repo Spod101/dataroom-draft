@@ -6,6 +6,26 @@ export function formatBytes(bytes: number): string {
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
 }
 
+/** Get a unique folder name in the same parent; uses "name", "name (1)", "name (2)", etc. (case-insensitive). */
+export function getUniqueFolderName(name: string, takenNames: Set<string>): string {
+  const trimmed = name.trim();
+  const lower = trimmed.toLowerCase();
+  if (!takenNames.has(lower)) {
+    takenNames.add(lower);
+    return trimmed;
+  }
+  let index = 1;
+  while (true) {
+    const candidate = `${trimmed} (${index})`;
+    const candidateKey = candidate.toLowerCase();
+    if (!takenNames.has(candidateKey)) {
+      takenNames.add(candidateKey);
+      return candidate;
+    }
+    index += 1;
+  }
+}
+
 export function getUniqueFileName(name: string, takenNames: Set<string>): string {
   // We treat names as case-insensitive for uniqueness, so "Test.png" and "test.png"
   // cannot coexist in the same folder.
