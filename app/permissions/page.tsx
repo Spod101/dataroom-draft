@@ -119,6 +119,26 @@ function buildPermissionItems(rootFolders: DataRoomFolder[]): {
   return { items, kindsById };
 }
 
+/** Filter tree by search: keep items whose name matches, and folders that contain matches (so path to matches is visible). */
+function filterPermissionTree(items: PermissionItem[], search: string): PermissionItem[] {
+  const q = search.trim().toLowerCase();
+  if (!q) return items;
+
+  const filterOne = (item: PermissionItem): PermissionItem | null => {
+    const nameMatch = item.name.toLowerCase().includes(q);
+    if (item.kind === "file") return nameMatch ? { ...item } : null;
+    const filteredChildren = (item.children ?? [])
+      .map(filterOne)
+      .filter((c): c is PermissionItem => c !== null);
+    if (nameMatch || filteredChildren.length > 0) {
+      return { ...item, children: filteredChildren.length ? filteredChildren : undefined };
+    }
+    return null;
+  };
+
+  return items.map(filterOne).filter((c): c is PermissionItem => c !== null);
+}
+
 export default function PermissionsPage() {
   const { profile, loading } = useAuth();
   const isAdmin = profile?.role === "admin";
@@ -950,7 +970,20 @@ export default function PermissionsPage() {
                   No folders/files found in the data room yet.
                 </p>
               )}
-              {!loadingTree && filesTree.map((item) => renderFileRow(item))}
+              {!loadingTree && (() => {
+                const displayTree =
+                  searchFile.trim() === ""
+                    ? filesTree
+                    : filterPermissionTree(filesTree, searchFile);
+                if (searchFile.trim() !== "" && displayTree.length === 0 && filesTree.length > 0) {
+                  return (
+                    <p className="text-xs text-muted-foreground px-4 py-3">
+                      No files or folders match &quot;{searchFile.trim()}&quot;.
+                    </p>
+                  );
+                }
+                return displayTree.map((item) => renderFileRow(item));
+              })()}
             </div>
           </CardContent>
         </Card>
