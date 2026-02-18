@@ -801,21 +801,56 @@ export async function listTrash(): Promise<TrashSummary> {
     files: filesWithNames,
   };
 }
-
-/** Restore a soft-deleted folder from trash. */
 export async function restoreFolder(folderId: string): Promise<void> {
   await assertCanEditFolder(folderId, "restore folders");
-  const { data: folderData } = await supabase
+
+  const { data: folderData, error: folderError } = await supabase
     .from("folders")
-    .select("name")
+    .select("name, parent_folder_id")
     .eq("id", folderId)
     .maybeSingle();
-  const folderName = folderData ? ((folderData as { name: string | null }).name ?? undefined) : undefined;
+
+  if (folderError || !folderData) throw new Error("Folder not found");
+
+  const folderRow = folderData as { name: string | null; parent_folder_id: string | null };
+  const folderName = folderRow.name ?? "Untitled folder";
+  const parentFolderId = folderRow.parent_folder_id;
+
+  // Check for an existing non-deleted sibling with the same name
+  let conflictQuery = supabase
+    .from("folders")
+    .select("id")
+    .eq("name", folderName)
+    .eq("is_deleted", false)
+    .neq("id", folderId);
+
+  if (parentFolderId === null) {
+    conflictQuery = conflictQuery.is("parent_folder_id", null);
+  } else {
+    conflictQuery = conflictQuery.eq("parent_folder_id", parentFolderId);
+  }
+
+  const { data: conflict, error: conflictError } = await conflictQuery.maybeSingle();
+  if (conflictError) throw new Error(conflictError.message);
+  if (conflict) {
+    throw new Error(
+      `A folder named "${folderName}" already exists in this location. Rename or remove it before restoring.`
+    );
+  }
+
+  const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("folders")
-    .update({ is_deleted: false, deleted_at: null })
+    .update({
+      is_deleted: false,
+      deleted_at: null,
+      deleted_by: null,
+      last_modified: new Date().toISOString(),
+      modified_by: modifiedBy,
+    })
     .eq("id", folderId);
   if (error) throw new Error(error.message);
+
   await logAuditEvent("folder.restore", "folder", {
     targetId: folderId,
     folderId,
@@ -823,20 +858,55 @@ export async function restoreFolder(folderId: string): Promise<void> {
   });
 }
 
-/** Restore a soft-deleted file from trash. */
+/** Restore a soft-deleted file from trash.
+ * Enforces unique file names within a folder by blocking restore if a
+ * non-deleted file in the same folder already has the same name.
+ */
 export async function restoreFile(fileId: string): Promise<void> {
   await assertCanEditFile(fileId, "restore");
-  const { data: fileData } = await supabase
+
+  const { data: fileData, error: fileError } = await supabase
     .from("files")
-    .select("name")
+    .select("name, folder_id")
     .eq("id", fileId)
     .maybeSingle();
-  const fileName = fileData ? ((fileData as { name: string | null }).name ?? undefined) : undefined;
+
+  if (fileError || !fileData) throw new Error("File not found");
+
+  const fileRow = fileData as { name: string | null; folder_id: string };
+  const fileName = fileRow.name ?? "Untitled";
+  const folderId = fileRow.folder_id;
+
+  // Check for an existing non-deleted file with the same name in this folder
+  const { data: conflict, error: conflictError } = await supabase
+    .from("files")
+    .select("id")
+    .eq("folder_id", folderId)
+    .eq("name", fileName)
+    .eq("is_deleted", false)
+    .neq("id", fileId)
+    .maybeSingle();
+
+  if (conflictError) throw new Error(conflictError.message);
+  if (conflict) {
+    throw new Error(
+      `A file named "${fileName}" already exists in this folder. Rename or remove it before restoring.`
+    );
+  }
+
+  const modifiedBy = await getCurrentUserId();
   const { error } = await supabase
     .from("files")
-    .update({ is_deleted: false, deleted_at: null })
+    .update({
+      is_deleted: false,
+      deleted_at: null,
+      deleted_by: null,
+      last_modified: new Date().toISOString(),
+      modified_by: modifiedBy,
+    })
     .eq("id", fileId);
   if (error) throw new Error(error.message);
+
   await logAuditEvent("file.restore", "file", {
     targetId: fileId,
     fileId,

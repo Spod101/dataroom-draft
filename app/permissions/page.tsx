@@ -135,6 +135,28 @@ export default function PermissionsPage() {
   const [addUserError, setAddUserError] = React.useState<string | null>(null);
   const [addingUser, setAddingUser] = React.useState(false);
 
+  const formatAddUserErrorMessage = (err: unknown): string => {
+    const anyErr = err as { message?: string; code?: string } | null | undefined;
+    const msg = (anyErr?.message ?? "").toString();
+    const code = (anyErr?.code ?? "").toString();
+
+    // Postgres unique constraint violations (e.g. users.email unique)
+    if (
+      code === "23505" ||
+      msg.includes("users_email_key") ||
+      msg.toLowerCase().includes("duplicate key value violates unique constraint")
+    ) {
+      return "That email is already in use. Try a different email or edit the existing user.";
+    }
+
+    // Supabase auth sign-up conflicts
+    if (msg.toLowerCase().includes("user already registered") || msg.toLowerCase().includes("already been registered")) {
+      return "That email is already registered. Try a different email or invite the existing user.";
+    }
+
+    return msg || "Failed to add user. Please try again.";
+  };
+
   // Load users from DB (only on mount – selectedUser is set here, not as trigger)
   React.useEffect(() => {
     let cancelled = false;
@@ -348,7 +370,7 @@ export default function PermissionsPage() {
       });
 
       if (authError) {
-        setAddUserError(authError.message);
+        setAddUserError(formatAddUserErrorMessage(authError));
         setAddingUser(false);
         return;
       }
@@ -382,7 +404,7 @@ export default function PermissionsPage() {
         );
 
       if (profileError) {
-        setAddUserError(profileError.message);
+        setAddUserError(formatAddUserErrorMessage(profileError));
         setAddingUser(false);
         return;
       }
@@ -405,7 +427,7 @@ export default function PermissionsPage() {
       setAddUserDialogOpen(false);
       setAddingUser(false);
     } catch (err) {
-      setAddUserError("An unexpected error occurred");
+      setAddUserError(formatAddUserErrorMessage(err));
       setAddingUser(false);
     }
   };
