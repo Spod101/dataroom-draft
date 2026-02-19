@@ -22,7 +22,9 @@ import {
   moveFolderToParent,
   moveFileToFolder,
 } from "@/lib/dataroom-supabase";
+import { withTimeout } from "@/lib/retry-utils";
 import { getUniqueFileName, preserveExtensionOnRename } from "@/lib/dataroom-utils";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 import { useRouter } from "next/navigation";
 
@@ -302,14 +304,22 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     loadedFolderIds: new Set<string>(),
   });
 
+  const REFRESH_TIMEOUT_MS = 20_000; // Prevent infinite loading when request hangs (e.g. after idle)
+
   const refresh = React.useCallback(async () => {
     dispatch({ type: "SET_LOADING", loading: true });
     try {
-      // Use lazy loading: only fetch root folders initially
-      const rootFolders = await fetchRootFolders();
+      const rootFolders = await withTimeout(
+        fetchRootFolders(),
+        REFRESH_TIMEOUT_MS,
+        "Loading timed out. Check your connection and try again."
+      );
       dispatch({ type: "SET_ROOT_FOLDERS", rootFolders });
     } catch (e) {
-      dispatch({ type: "SET_ERROR", error: e instanceof Error ? e.message : "Failed to load" });
+      const err = e instanceof Error ? e : new Error(String(e));
+      dispatch({ type: "SET_ERROR", error: err.message });
+    } finally {
+      dispatch({ type: "SET_LOADING", loading: false });
     }
   }, []);
 
@@ -317,14 +327,28 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
   const loadedFolderIdsRef = React.useRef(state.loadedFolderIds);
   loadedFolderIdsRef.current = state.loadedFolderIds;
 
+  // Dedupe: only one in-flight load per folderId (avoids 4x timeouts for same folder after idle)
+  const inFlightFolderIdsRef = React.useRef<Set<string>>(new Set());
+
+  const FOLDER_LOAD_TIMEOUT_MS = 15_000; // Prevent endless "Loading folder..." when request hangs
+
   const loadFolderChildren = React.useCallback(async (folderId: string) => {
     if (loadedFolderIdsRef.current.has(folderId)) return;
+    if (inFlightFolderIdsRef.current.has(folderId)) return;
 
+    inFlightFolderIdsRef.current.add(folderId);
     try {
-      const { folders, files } = await fetchFolderChildren(folderId);
+      const { folders, files } = await withTimeout(
+        fetchFolderChildren(folderId),
+        FOLDER_LOAD_TIMEOUT_MS,
+        "Folder load timed out. Check your connection and try again."
+      );
       dispatch({ type: "SET_FOLDER_CHILDREN", folderId, folders, files });
     } catch (e) {
-      dispatch({ type: "SET_ERROR", error: e instanceof Error ? e.message : "Failed to load folder" });
+      const err = e instanceof Error ? e : new Error(String(e));
+      dispatch({ type: "SET_ERROR", error: err.message });
+    } finally {
+      inFlightFolderIdsRef.current.delete(folderId);
     }
   }, []);
 
@@ -336,14 +360,19 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     let hiddenAt: number | null = null;
     const MIN_IDLE_MS = 60_000; // Only refresh if tab was hidden for 1+ min
-    const handleVisibility = () => {
+    const handleVisibility = async () => {
       if (document.visibilityState === "hidden") {
         hiddenAt = Date.now();
       } else if (document.visibilityState === "visible" && hiddenAt !== null) {
         const idleMs = Date.now() - hiddenAt;
         if (idleMs >= MIN_IDLE_MS) {
+          try {
+            await supabase.auth.getSession();
+          } catch {
+            // Continue anyway; refresh() may still succeed
+          }
           refresh();
-          router.refresh(); // Revalidate RSC payloads
+          router.refresh();
         }
         hiddenAt = null;
       }

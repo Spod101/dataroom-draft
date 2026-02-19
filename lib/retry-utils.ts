@@ -38,3 +38,23 @@ export async function withRetry<T>(
   }
   throw lastError;
 }
+
+/**
+ * Reject after ms milliseconds. Use with Promise.race() to add a timeout to any promise.
+ */
+export function timeoutPromise<T = never>(ms: number, message = "Request timed out"): Promise<T> {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(message)), ms);
+  });
+}
+
+/**
+ * Run a promise with a timeout. If it doesn't resolve within ms, reject with a timeout error.
+ */
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message = "Request timed out"
+): Promise<T> {
+  return Promise.race([promise, timeoutPromise<T>(ms, message)]);
+}
