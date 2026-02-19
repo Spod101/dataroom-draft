@@ -1,4 +1,9 @@
 /**
+ * Network resilience: retry on transient failures and timeouts for async operations.
+ * Used by data room fetches so loading never hangs indefinitely (e.g. after idle).
+ */
+
+/**
  * Check if an error is likely a network/connection failure that may succeed on retry.
  */
 function isRetryableError(err: unknown): boolean {

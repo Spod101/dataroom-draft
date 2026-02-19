@@ -589,16 +589,30 @@ export default function DynamicDataRoomPage() {
     return crumbs;
   }, [path, getFolder]);
 
-  // Get parent path for back button
   const parentPath = path.length > 0 ? path.slice(0, -1) : null;
   const backHref = parentPath ? (parentPath.length > 0 ? `/dataroom/${parentPath.join("/")}` : "/dataroom") : null;
 
+  // Root: show clear error when initial load failed (user can refresh the page)
+  if (path.length === 0 && state.error && !state.loading) {
+    return (
+      <SidebarInset>
+        <div className="flex flex-col items-center justify-center min-h-[50vh] gap-2 p-8">
+          <p className="text-muted-foreground text-center">Failed to load data room.</p>
+          <p className="text-sm text-muted-foreground text-center max-w-md">{state.error}</p>
+          <p className="text-sm text-muted-foreground text-center">Refresh the page to try again.</p>
+        </div>
+      </SidebarInset>
+    );
+  }
+
+  // Nested path: folder not loaded yet or failed
   if (path.length > 0 && !folder) {
     if (folderLoadTimeout) {
       return (
         <SidebarInset>
           <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
             <p className="text-muted-foreground text-center">Folder not found or loading failed.</p>
+            <p className="text-sm text-muted-foreground text-center">Refresh the page or go back to Data Room.</p>
             <Button variant="outline" onClick={() => router.push("/dataroom")}>
               Back to Data Room
             </Button>
@@ -609,7 +623,7 @@ export default function DynamicDataRoomPage() {
     return (
       <SidebarInset>
         <div className="flex flex-col items-center justify-center h-full gap-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
           <p className="text-muted-foreground">Loading folder...</p>
         </div>
       </SidebarInset>
@@ -698,11 +712,9 @@ export default function DynamicDataRoomPage() {
         )}
         
         {state.error && (
-          <div className="flex items-center justify-between gap-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-2 text-sm text-destructive">
             <span>{state.error}</span>
-            <Button variant="outline" size="sm" onClick={() => refresh()}>
-              Retry
-            </Button>
+            <p className="mt-1 text-muted-foreground text-xs">Refresh the page to try again.</p>
           </div>
         )}
         

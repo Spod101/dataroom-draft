@@ -4,66 +4,62 @@ import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth-context";
 
-const PUBLIC_ROUTES = ['/login', '/signup']; // signup page still reachable but shows disabled UI
-const PUBLIC_PREFIX_ROUTES = ['/share']; // Routes that start with this prefix are public
-const ADMIN_ONLY_ROUTES = ['/permissions', '/audit', '/insights'];
+const PUBLIC_ROUTES = ["/login", "/signup"];
+const PUBLIC_PREFIX_ROUTES = ["/share"];
+const ADMIN_ONLY_ROUTES = ["/permissions", "/audit", "/insights"];
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const path = pathname ?? "";
 
   useEffect(() => {
     if (loading) return;
 
-    const isPublicRoute = PUBLIC_ROUTES.includes(pathname) || PUBLIC_PREFIX_ROUTES.some(prefix => pathname?.startsWith(prefix));
-    const isAdminRoute = ADMIN_ONLY_ROUTES.some(route => pathname.startsWith(route));
-    const isAdmin = profile?.role === 'admin';
+    const isPublicRoute =
+      PUBLIC_ROUTES.includes(path) || PUBLIC_PREFIX_ROUTES.some((prefix) => path.startsWith(prefix));
+    const isAdminRoute = ADMIN_ONLY_ROUTES.some((route) => path.startsWith(route));
+    const isAdmin = profile?.role === "admin";
 
-    // Redirect authenticated users away from login/signup
-    if (user && PUBLIC_ROUTES.includes(pathname)) {
+    if (user && PUBLIC_ROUTES.includes(path)) {
       const params = new URLSearchParams(window.location.search);
-      const redirect = params.get('redirect') || '/dataroom';
-      router.push(redirect);
+      router.push(params.get("redirect") || "/dataroom");
       return;
     }
 
-    // Redirect unauthenticated users to login (except public routes)
     if (!user && !isPublicRoute) {
-      router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+      router.push(`/login?redirect=${encodeURIComponent(path)}`);
       return;
     }
 
-    // Redirect non-admin users away from admin routes
     if (user && isAdminRoute && !isAdmin) {
-      router.push('/dataroom');
+      router.push("/dataroom");
       return;
     }
-  }, [user, profile, loading, pathname, router]);
+  }, [user, profile, loading, path, router]);
 
-  // Show loading spinner while checking auth
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
 
-  const isPublicRoute = PUBLIC_ROUTES.includes(pathname) || PUBLIC_PREFIX_ROUTES.some(prefix => pathname?.startsWith(prefix));
-  const isAdminRoute = ADMIN_ONLY_ROUTES.some(route => pathname.startsWith(route));
-  const isAdmin = profile?.role === 'admin';
+  const isPublicRoute =
+    PUBLIC_ROUTES.includes(path) || PUBLIC_PREFIX_ROUTES.some((prefix) => path.startsWith(prefix));
+  const isAdminRoute = ADMIN_ONLY_ROUTES.some((route) => path.startsWith(route));
+  const isAdmin = profile?.role === "admin";
 
-  // Don't render protected content for unauthenticated users (except public routes)
   if (!user && !isPublicRoute) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
 
-  // Don't render admin content for non-admin users
   if (user && isAdminRoute && !isAdmin) {
     return null;
   }
