@@ -14,6 +14,7 @@ function isRetryableError(err: unknown): boolean {
     // Network/connection errors that often happen when tab was idle
     if (name === "aborterror") return true;
     if (msg.includes("network") || msg.includes("fetch") || msg.includes("connection")) return true;
+    if (msg.includes("timed out") || msg.includes("timeout")) return true;
     if (msg.includes("err_network_changed") || msg.includes("err_connection")) return true;
   }
   return false;

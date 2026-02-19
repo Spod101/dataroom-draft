@@ -106,7 +106,7 @@ export default function DynamicDataRoomPage() {
   const folder = path.length > 0 ? getFolder(path) : null;
   const children = getChildren(path);
 
-  // Lazy load all parent folders in the path chain
+  // Lazy load all parent folders in the path chain (including the current folder)
   React.useEffect(() => {
     const loadPathChain = async () => {
       // Load each folder in the path from root to current
@@ -124,13 +124,6 @@ export default function DynamicDataRoomPage() {
       loadPathChain();
     }
   }, [path, state.loadedFolderIds, loadFolderChildren, getFolder]);
-
-  // Also load children of the current folder
-  React.useEffect(() => {
-    if (folder && !state.loadedFolderIds.has(folder.id)) {
-      loadFolderChildren(folder.id);
-    }
-  }, [folder, state.loadedFolderIds, loadFolderChildren]);
 
   // Timeout for invalid/missing folders – show error instead of endless loading
   const [folderLoadTimeout, setFolderLoadTimeout] = React.useState(false);

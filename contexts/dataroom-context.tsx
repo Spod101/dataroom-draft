@@ -21,7 +21,7 @@ import {
   moveFolderToParent,
   moveFileToFolder,
 } from "@/lib/dataroom-supabase";
-import { withTimeout } from "@/lib/retry-utils";
+import { withTimeout, withRetry } from "@/lib/retry-utils";
 import { getUniqueFileName, preserveExtensionOnRename } from "@/lib/dataroom-utils";
 import { useAuth } from "@/contexts/auth-context";
 import { useRouter } from "next/navigation";
@@ -303,18 +303,23 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
   });
 
   // Timeouts so loading never hangs (e.g. after idle or slow network)
-  const REFRESH_TIMEOUT_MS = 20_000;
-  const FOLDER_LOAD_TIMEOUT_MS = 15_000;
+  // Increased values for post-idle recovery when connection needs to re-establish
+  const REFRESH_TIMEOUT_MS = 45_000;  // 45s for root folder refresh (more generous for connection recovery)
+  const FOLDER_LOAD_TIMEOUT_MS = 30_000;  // 30s for nested folder loads
 
   const refresh = React.useCallback(async () => {
     dispatch({ type: "SET_LOADING", loading: true });
     try {
-      const rootFolders = await withTimeout(
-        fetchRootFolders(),
-        REFRESH_TIMEOUT_MS,
-        "Loading timed out. Check your connection and try again."
+      const rootFolders = await withRetry(
+        () => withTimeout(
+          fetchRootFolders(),
+          REFRESH_TIMEOUT_MS,
+          "Loading timed out. Check your connection and try again."
+        ),
+        { maxAttempts: 3, baseDelayMs: 2000 }
       );
       dispatch({ type: "SET_ROOT_FOLDERS", rootFolders });
+      dispatch({ type: "SET_ERROR", error: null });  // Clear error on success
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       dispatch({ type: "SET_ERROR", error: err.message });
@@ -322,8 +327,6 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
       dispatch({ type: "SET_LOADING", loading: false });
     }
   }, []);
-
-  // Use ref to avoid loadFolderChildren changing when loadedFolderIds changes (prevents effect cascade)
   const loadedFolderIdsRef = React.useRef(state.loadedFolderIds);
   loadedFolderIdsRef.current = state.loadedFolderIds;
 
@@ -335,12 +338,16 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
 
     inFlightFolderIdsRef.current.add(folderId);
     try {
-      const { folders, files } = await withTimeout(
-        fetchFolderChildren(folderId),
-        FOLDER_LOAD_TIMEOUT_MS,
-        "Folder load timed out. Check your connection and try again."
+      const { folders, files } = await withRetry(
+        () => withTimeout(
+          fetchFolderChildren(folderId),
+          FOLDER_LOAD_TIMEOUT_MS,
+          "Folder load timed out. Check your connection and try again."
+        ),
+        { maxAttempts: 2, baseDelayMs: 1500 } 
       );
       dispatch({ type: "SET_FOLDER_CHILDREN", folderId, folders, files });
+      dispatch({ type: "SET_ERROR", error: null }); 
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       dispatch({ type: "SET_ERROR", error: err.message });
@@ -350,16 +357,20 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   React.useEffect(() => {
+    // Initialize data room on mount only
     refresh();
-  }, [refresh]);
+  }, []);
 
-  // Re-fetch when user returns to tab after 1+ min (recover from stale connections; refresh() has its own timeout)
   React.useEffect(() => {
     let hiddenAt: number | null = null;
     const MIN_IDLE_MS = 60_000;
     const handleVisibility = () => {
       if (document.visibilityState === "hidden") {
         hiddenAt = Date.now();
+        // Cancel any in-flight uploads when tab becomes hidden
+        if (state.upload?.abortController) {
+          state.upload.abortController.abort();
+        }
       } else if (document.visibilityState === "visible" && hiddenAt !== null) {
         if (Date.now() - hiddenAt >= MIN_IDLE_MS) {
           refresh();
@@ -370,7 +381,7 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     };
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
-  }, [refresh, router]);
+  }, []);
 
   const getChildren = React.useCallback(
     (path: DataRoomPath) => getChildrenAtPath(state.rootFolders, path),
