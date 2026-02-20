@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
         provider: provider as any,
         options: {
           redirectTo: redirectUrl,
-          skipBrowserWarning: true,
+          skipBrowserRedirect: false,
         },
       });
 
