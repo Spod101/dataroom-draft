@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/auth/password-input";
+import { LogIn } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -28,6 +29,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [ssoLoading, setSsoLoading] = useState(false);
   const [showEmailNotConfirmed, setShowEmailNotConfirmed] = useState(false);
   const [resendingEmail, setResendingEmail] = useState(false);
   const [emailResent, setEmailResent] = useState(false);
@@ -83,6 +85,34 @@ export default function LoginPage() {
     }
 
     setResendingEmail(false);
+  }
+
+  async function handleSSOLogin(provider: string) {
+    setSsoLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch("/api/auth/sso-initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        setError(data.error || "SSO login failed");
+        setSsoLoading(false);
+        return;
+      }
+
+      const data = await response.json();
+      // Redirect to OAuth provider
+      window.location.href = data.authUrl;
+    } catch (err) {
+      console.error("SSO error:", err);
+      setError("An error occurred during SSO login");
+      setSsoLoading(false);
+    }
   }
 
   return (
@@ -152,9 +182,41 @@ export default function LoginPage() {
             )}
           </CardContent>
           <CardFooter className="flex flex-col gap-5 px-8 pb-8 pt-2">
-            <Button type="submit" className="w-full h-10" disabled={loading}>
+            <Button type="submit" className="w-full h-10" disabled={loading || ssoLoading}>
               {loading ? "Signing in…" : "Sign in"}
             </Button>
+
+            {/* SSO Section */}
+            <div className="space-y-3 w-full">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-border"></div>
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card/95 px-2 text-muted-foreground">Or continue with</span>
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-10"
+                onClick={() => handleSSOLogin("sso")}
+                disabled={loading || ssoLoading}
+              >
+                {ssoLoading ? (
+                  <>
+                    <LogIn className="mr-2 h-4 w-4 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="mr-2 h-4 w-4" />
+                    Sign in with your identity provider
+                  </>
+                )}
+              </Button>
+            </div>
             {/* Signup disabled
             <p className="text-muted-foreground text-center text-xs">
               Don&apos;t have an account?{" "}
