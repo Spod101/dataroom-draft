@@ -34,6 +34,9 @@ type AuthContextValue = AuthState & {
 
 const AuthContext = React.createContext<AuthContextValue | null>(null);
 
+// Debounce session operations to prevent rapid re-initialization
+const SESSION_DEBOUNCE_MS = 500;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = React.useState<AuthState>({
     user: null,
@@ -43,52 +46,151 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     sessions: [],
   });
 
+  // Track initialization to prevent duplicate session creation
+  const initializingRef = React.useRef(false);
+  const lastInitUserIdRef = React.useRef<string | null>(null);
+  const initDebounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
   React.useEffect(() => {
     let cancelled = false;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-    // Safety: force loading=false after 10s to avoid infinite spinner on hard refresh
-    const AUTH_INIT_TIMEOUT_MS = 10_000;
-    timeoutId = setTimeout(async () => {
-      if (cancelled) return;
-      const { data: { session } } = await supabase.auth.getSession();
+    // Safety: force loading=false after 8s to avoid infinite spinner
+    const AUTH_INIT_TIMEOUT_MS = 8_000;
+    timeoutId = setTimeout(() => {
       if (cancelled) return;
       setState((prev) => {
         if (!prev.loading) return prev;
-        if (session?.user) {
-          return {
-            user: { id: session.user.id, email: session.user.email ?? "" },
-            profile: null,
-            loading: false,
-            currentSession: null,
-            sessions: [],
-          };
-        }
+        console.warn('[Auth] Init timeout reached, forcing loading=false');
         return { user: null, profile: null, loading: false, currentSession: null, sessions: [] };
       });
     }, AUTH_INIT_TIMEOUT_MS);
 
     // Get user profile from database
     async function fetchProfile(userId: string): Promise<UserProfile | null> {
-      const { data, error } = await supabase
-        .from("users")
-        .select("id, name, email, role")
-        .eq("id", userId)
-        .single();
-      
-      if (error) {
-        console.error('Failed to fetch profile:', error);
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select("id, name, email, role")
+          .eq("id", userId)
+          .single();
+        
+        if (error) {
+          console.error('[Auth] Failed to fetch profile:', error);
+          return null;
+        }
+        
+        return data as UserProfile;
+      } catch (err) {
+        console.error('[Auth] Profile fetch error:', err);
         return null;
       }
-      
-      return data as UserProfile;
     }
 
-    // Initialize auth state
+    // Load user data and session - deduped by userId
+    async function loadUserData(userId: string, email: string) {
+      // Skip if already initializing for this user or recently completed
+      if (initializingRef.current && lastInitUserIdRef.current === userId) {
+        return;
+      }
+
+      // Debounce rapid calls (e.g., from both getSession and onAuthStateChange)
+      if (initDebounceRef.current) {
+        clearTimeout(initDebounceRef.current);
+      }
+
+      return new Promise<void>((resolve) => {
+        initDebounceRef.current = setTimeout(async () => {
+          if (cancelled || (initializingRef.current && lastInitUserIdRef.current === userId)) {
+            resolve();
+            return;
+          }
+
+          initializingRef.current = true;
+          lastInitUserIdRef.current = userId;
+
+          try {
+            // Load profile first (faster operation)
+            const profile = await fetchProfile(userId);
+            
+            if (cancelled) {
+              initializingRef.current = false;
+              resolve();
+              return;
+            }
+
+            // Set initial state with user info immediately to reduce perceived loading
+            setState(prev => ({
+              ...prev,
+              user: { id: userId, email },
+              profile,
+              loading: prev.currentSession === null, // Keep loading until we have session
+            }));
+
+            // Create or get session and fetch all sessions
+            const deviceInfo = getDeviceInfo();
+            const [userSession, allSessions] = await Promise.all([
+              createSession(userId, deviceInfo).catch(() => null),
+              getUserSessions(userId).catch(() => []),
+            ]);
+
+            if (cancelled) {
+              initializingRef.current = false;
+              resolve();
+              return;
+            }
+
+            setState({
+              user: { id: userId, email },
+              profile,
+              loading: false,
+              currentSession: userSession,
+              sessions: allSessions,
+            });
+          } catch (error: any) {
+            const errorMessage = error?.message ?? "";
+            const errorName = error?.name ?? "";
+            
+            // Ignore abort/cancellation errors
+            if (
+              errorName === "AbortError" ||
+              errorMessage.includes("signal is aborted") ||
+              errorMessage.includes("AbortError")
+            ) {
+              initializingRef.current = false;
+              resolve();
+              return;
+            }
+            
+            console.error('[Auth] User data load error:', error);
+            
+            if (!cancelled) {
+              // Still set user as logged in even if session creation failed
+              setState(prev => ({
+                user: prev.user ?? { id: userId, email },
+                profile: prev.profile,
+                loading: false,
+                currentSession: null,
+                sessions: [],
+              }));
+            }
+          } finally {
+            initializingRef.current = false;
+          }
+          
+          resolve();
+        }, SESSION_DEBOUNCE_MS);
+      });
+    }
+
+    // Initialize auth state - runs once on mount
     async function initAuth() {
       try {
-        // Get current session
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('[Auth] getSession error:', error);
+        }
         
         if (cancelled) return;
         
@@ -97,75 +199,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        // Load user profile
-        const profile = await fetchProfile(session.user.id);
-        
-        if (cancelled) return;
-
-        // Create or get session and fetch all sessions in parallel
-        const deviceInfo = getDeviceInfo();
-        const [userSession, allSessions] = await Promise.all([
-          createSession(session.user.id, deviceInfo),
-          getUserSessions(session.user.id),
-        ]);
-
-        if (cancelled) return;
-
-        setState({
-          user: { id: session.user.id, email: session.user.email ?? "" },
-          profile,
-          loading: false,
-          currentSession: userSession,
-          sessions: allSessions,
-        });
-      } catch (error: any) {
-        // Ignore AbortError and other expected errors (e.g., from signal cancellation)
-        const errorMessage = error?.message ?? "";
-        const errorName = error?.name ?? "";
-        if (
-          errorName === "AbortError" ||
-          errorMessage.includes("signal is aborted") ||
-          errorMessage.includes("AbortError")
-        ) {
-          if (!cancelled) {
-            setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
-          }
-          return;
-        }
-        console.error('Auth initialization error:', error);
+        await loadUserData(session.user.id, session.user.email ?? "");
+      } catch (error) {
+        console.error('[Auth] Init error:', error);
         if (!cancelled) {
           setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
         }
       }
     }
 
-    // Listen for auth changes
+    // Listen for auth changes - handles sign in/out events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (cancelled) return;
 
+      // Handle sign out
       if (event === 'SIGNED_OUT' || !session) {
+        lastInitUserIdRef.current = null;
+        initializingRef.current = false;
+        if (initDebounceRef.current) {
+          clearTimeout(initDebounceRef.current);
+          initDebounceRef.current = null;
+        }
         setState({ user: null, profile: null, loading: false, currentSession: null, sessions: [] });
         return;
       }
 
+      // Handle new sign in (not initial session load)
       if (event === 'SIGNED_IN' && session.user) {
-        const profile = await fetchProfile(session.user.id);
-        if (cancelled) return;
-        const deviceInfo = getDeviceInfo();
-        const [userSession, allSessions] = await Promise.all([
-          createSession(session.user.id, deviceInfo),
-          getUserSessions(session.user.id),
-        ]);
+        await loadUserData(session.user.id, session.user.email ?? "");
+        return;
+      }
 
-        if (!cancelled) {
-          setState({
+      // Handle token refresh - update user state if needed but don't reload everything
+      if (event === 'TOKEN_REFRESHED' && session.user) {
+        setState(prev => {
+          if (prev.user?.id === session.user.id) return prev;
+          return {
+            ...prev,
             user: { id: session.user.id, email: session.user.email ?? "" },
-            profile,
-            loading: false,
-            currentSession: userSession,
-            sessions: allSessions,
-          });
-        }
+          };
+        });
       }
     });
 
@@ -174,6 +247,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
       if (timeoutId) clearTimeout(timeoutId);
+      if (initDebounceRef.current) clearTimeout(initDebounceRef.current);
       subscription.unsubscribe();
     };
   }, []);

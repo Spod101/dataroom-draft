@@ -58,8 +58,12 @@ export default function LoginPage() {
         return;
       }
 
-      // Success - AuthContext will handle the session
-      // Router will redirect via AuthGuard
+      // Success - AuthContext will handle the session and redirect
+      // Keep a brief loading state, then clear it - AuthGuard will handle the redirect
+      // This ensures the button doesn't get stuck if redirect is delayed
+      setTimeout(() => {
+        setLoading(false);
+      }, 3000);
     } catch (err) {
       console.error('Login error:', err);
       setError('An unexpected error occurred. Please try again.');

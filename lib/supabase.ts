@@ -9,7 +9,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-// Custom storage that safely handles SSR
+// Custom storage that safely handles SSR and storage errors
 const customStorage = {
   getItem: (key: string): string | null => {
     if (typeof window === 'undefined') return null;
@@ -24,7 +24,7 @@ const customStorage = {
     try {
       window.localStorage.setItem(key, value);
     } catch {
-      // Ignore storage errors (e.g., in private browsing mode)
+      // Ignore storage errors (e.g., in private browsing mode or quota exceeded)
     }
   },
   removeItem: (key: string): void => {
@@ -40,6 +40,11 @@ const customStorage = {
 /**
  * Supabase client for database, auth, storage, and realtime.
  * Use in Client Components, Server Components, API routes, and Server Actions.
+ * 
+ * Configuration optimized for:
+ * - Reliable session recovery after tab idle
+ * - Proper token refresh handling
+ * - Network failure resilience
  */
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -50,4 +55,57 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
     flowType: 'pkce',
   },
+  global: {
+    headers: {
+      'x-client-info': 'dataroom-web',
+    },
+  },
+  // Realtime configuration for better connection handling
+  realtime: {
+    params: {
+      eventsPerSecond: 2,
+    },
+  },
 });
+
+/**
+ * Helper to ensure auth session is valid before making requests.
+ * Call this before operations that require authentication after potential idle.
+ * 
+ * @returns true if session is valid, false if no session or refresh failed
+ */
+export async function ensureValidSession(): Promise<boolean> {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    
+    if (error) {
+      console.warn('[Supabase] Session check error:', error.message);
+      return false;
+    }
+    
+    if (!session) {
+      return false;
+    }
+    
+    // Check if token is about to expire (within 5 minutes)
+    const expiresAt = session.expires_at;
+    if (expiresAt) {
+      const expiresAtMs = expiresAt * 1000;
+      const fiveMinutesFromNow = Date.now() + 5 * 60 * 1000;
+      
+      if (expiresAtMs < fiveMinutesFromNow) {
+        // Token is about to expire, try to refresh
+        const { error: refreshError } = await supabase.auth.refreshSession();
+        if (refreshError) {
+          console.warn('[Supabase] Session refresh failed:', refreshError.message);
+          return false;
+        }
+      }
+    }
+    
+    return true;
+  } catch (err) {
+    console.error('[Supabase] ensureValidSession error:', err);
+    return false;
+  }
+}

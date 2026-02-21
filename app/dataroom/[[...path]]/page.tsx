@@ -107,15 +107,27 @@ export default function DynamicDataRoomPage() {
   const children = getChildren(path);
 
   // Lazy load all parent folders in the path chain (including the current folder)
+  // Use refs to avoid re-running effect when getFolder/loadedFolderIds change
+  const getFolderRef = React.useRef(getFolder);
+  getFolderRef.current = getFolder;
+  const loadedFolderIdsRef = React.useRef(state.loadedFolderIds);
+  loadedFolderIdsRef.current = state.loadedFolderIds;
+  const loadFolderChildrenRef = React.useRef(loadFolderChildren);
+  loadFolderChildrenRef.current = loadFolderChildren;
+
   React.useEffect(() => {
+    let cancelled = false;
+    
     const loadPathChain = async () => {
       // Load each folder in the path from root to current
       for (let i = 1; i <= path.length; i++) {
-        const partialPath = path.slice(0, i);
-        const folderAtPath = getFolder(partialPath);
+        if (cancelled) return;
         
-        if (folderAtPath && !state.loadedFolderIds.has(folderAtPath.id)) {
-          await loadFolderChildren(folderAtPath.id);
+        const partialPath = path.slice(0, i);
+        const folderAtPath = getFolderRef.current(partialPath);
+        
+        if (folderAtPath && !loadedFolderIdsRef.current.has(folderAtPath.id)) {
+          await loadFolderChildrenRef.current(folderAtPath.id);
         }
       }
     };
@@ -123,7 +135,11 @@ export default function DynamicDataRoomPage() {
     if (path.length > 0) {
       loadPathChain();
     }
-  }, [path, state.loadedFolderIds, loadFolderChildren, getFolder]);
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [path]); // Only re-run when path changes
 
   // Timeout for invalid/missing folders – show error instead of endless loading
   const [folderLoadTimeout, setFolderLoadTimeout] = React.useState(false);
