@@ -60,11 +60,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       'x-client-info': 'dataroom-web',
     },
   },
-  // Realtime configuration for better connection handling
+  // Realtime: reduce reconnect noise after idle
+  // Longer heartbeat interval = fewer dropped-connection events when tab is idle
   realtime: {
     params: {
       eventsPerSecond: 2,
     },
+    timeout: 30000,           // Wait 30s before declaring connection dead (default: 10s)
+    heartbeatIntervalMs: 60000, // Heartbeat every 60s instead of default 30s
   },
 });
 

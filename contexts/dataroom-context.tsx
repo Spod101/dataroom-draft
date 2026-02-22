@@ -300,21 +300,35 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     loadedFolderIds: new Set<string>(),
   });
 
-  // Shorter timeouts — if Supabase doesn't respond in 15s, fail fast instead of hanging
-  const REFRESH_TIMEOUT_MS = 15_000;
-  const FOLDER_LOAD_TIMEOUT_MS = 12_000;
+  const REFRESH_TIMEOUT_MS = 20_000;      // Increased: allow time for Supabase reconnect after idle
+  const FOLDER_LOAD_TIMEOUT_MS = 15_000;   // Increased: same reason
 
   const refresh = React.useCallback(async () => {
     dispatch({ type: "SET_LOADING", loading: true });
-    try {
+    const attempt = async () => {
       const rootFolders = await withTimeout(
         fetchRootFolders(),
         REFRESH_TIMEOUT_MS,
         "Loading timed out. Check your connection and try again."
       );
       dispatch({ type: "SET_ROOT_FOLDERS", rootFolders });
+    };
+    try {
+      await attempt();
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
+      // AbortError = Supabase internally aborted during reconnect — wait and retry once
+      if (err.name === "AbortError") {
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          await attempt();
+          return;
+        } catch (e2) {
+          const err2 = e2 instanceof Error ? e2 : new Error(String(e2));
+          dispatch({ type: "SET_ERROR", error: err2.message });
+          return;
+        }
+      }
       dispatch({ type: "SET_ERROR", error: err.message });
     }
   }, []);
@@ -330,12 +344,25 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
 
     inFlightFolderIdsRef.current.add(folderId);
     try {
-      const { folders, files } = await withTimeout(
+      const load = () => withTimeout(
         fetchFolderChildren(folderId),
         FOLDER_LOAD_TIMEOUT_MS,
         "Folder load timed out. Check your connection and try again."
       );
-      dispatch({ type: "SET_FOLDER_CHILDREN", folderId, folders, files });
+      let result;
+      try {
+        result = await load();
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        // AbortError = Supabase reconnecting — retry once after delay
+        if (err.name === "AbortError") {
+          await new Promise((r) => setTimeout(r, 2000));
+          result = await load();
+        } else {
+          throw e;
+        }
+      }
+      dispatch({ type: "SET_FOLDER_CHILDREN", folderId, folders: result.folders, files: result.files });
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       dispatch({ type: "SET_ERROR", error: err.message });
