@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase, ensureValidSession } from "@/lib/supabase";
 import { withRetry } from "@/lib/retry-utils";
 import type { DataRoomFolder, DataRoomFile } from "@/lib/dataroom-types";
 import { slugFromName, uniqueSlug } from "@/lib/dataroom-types";
@@ -123,6 +123,9 @@ async function fetchUserDisplayNames(userIds: string[]): Promise<Map<string, str
 }
 
 export async function fetchRootFolders(): Promise<DataRoomFolder[]> {
+  // Ensure auth token is valid before querying (prevents stale-JWT hangs after idle)
+  await ensureValidSession();
+
   return withRetry(async () => {
     const { data: folders, error: foldersError } = await supabase
       .from("folders")
@@ -186,6 +189,9 @@ export async function fetchRootFolders(): Promise<DataRoomFolder[]> {
   });
 }
 export async function fetchFolderChildren(folderId: string): Promise<{ folders: DataRoomFolder[]; files: DataRoomFile[] }> {
+  // Ensure auth token is valid before querying
+  await ensureValidSession();
+
   return withRetry(async () => {
     const [foldersRes, filesRes] = await Promise.all([
       supabase

@@ -11,12 +11,30 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Smartphone, Monitor, Tablet, X } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import type { UserSession } from "@/lib/session-utils";
+import { getUserSessions, getDeviceInfo } from "@/lib/session-utils";
 
 export default function SessionsPage() {
-  const { sessions, currentSession, refreshSessions, signOutAllDevices } = useAuth();
+  const { user, signOutAllDevices } = useAuth();
+  const [sessions, setSessions] = useState<UserSession[]>([]);
+  const [currentDeviceInfo, setCurrentDeviceInfo] = useState<string>("");
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadSessions = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    const data = await getUserSessions(user.id);
+    setSessions(data);
+    setLoading(false);
+  }, [user]);
+
+  useEffect(() => {
+    setCurrentDeviceInfo(getDeviceInfo());
+    loadSessions();
+  }, [loadSessions]);
 
   const getDeviceIcon = (deviceInfo: string) => {
     const lower = deviceInfo.toLowerCase();
@@ -41,7 +59,7 @@ export default function SessionsPage() {
       .eq("id", sessionId);
 
     if (!error) {
-      await refreshSessions();
+      await loadSessions();
     }
     setRevoking(null);
   };
@@ -72,7 +90,7 @@ export default function SessionsPage() {
 
       <div className="grid gap-4">
         {sessions.map((session) => {
-          const isCurrentSession = currentSession?.id === session.id;
+          const isCurrentSession = session.device_info === currentDeviceInfo;
           return (
             <Card key={session.id}>
               <CardHeader>
@@ -114,7 +132,15 @@ export default function SessionsPage() {
           );
         })}
 
-        {sessions.length === 0 && (
+        {loading && sessions.length === 0 && (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <p className="text-muted-foreground">Loading sessions...</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!loading && sessions.length === 0 && (
           <Card>
             <CardContent className="py-12 text-center">
               <p className="text-muted-foreground">No active sessions found</p>

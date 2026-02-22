@@ -21,10 +21,9 @@ import {
   moveFolderToParent,
   moveFileToFolder,
 } from "@/lib/dataroom-supabase";
-import { withTimeout, withRetry } from "@/lib/retry-utils";
+import { withTimeout } from "@/lib/retry-utils";
 import { getUniqueFileName, preserveExtensionOnRename } from "@/lib/dataroom-utils";
 import { useAuth } from "@/contexts/auth-context";
-import { useRouter } from "next/navigation";
 
 export type DataRoomState = {
   rootFolders: DataRoomFolder[];
@@ -291,7 +290,6 @@ const DataRoomContext = React.createContext<DataRoomContextValue | null>(null);
 
 export function DataRoomProvider({ children }: { children: React.ReactNode }) {
   const { profile } = useAuth();
-  const router = useRouter();
   const currentUserDisplayName = profile?.name ?? "You";
 
   const [state, dispatch] = React.useReducer(reducer, {
@@ -302,31 +300,25 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     loadedFolderIds: new Set<string>(),
   });
 
-  // Timeouts so loading never hangs (e.g. after idle or slow network)
-  // Increased values for post-idle recovery when connection needs to re-establish
-  const REFRESH_TIMEOUT_MS = 45_000;  // 45s for root folder refresh (more generous for connection recovery)
-  const FOLDER_LOAD_TIMEOUT_MS = 30_000;  // 30s for nested folder loads
+  // Shorter timeouts — if Supabase doesn't respond in 15s, fail fast instead of hanging
+  const REFRESH_TIMEOUT_MS = 15_000;
+  const FOLDER_LOAD_TIMEOUT_MS = 12_000;
 
   const refresh = React.useCallback(async () => {
     dispatch({ type: "SET_LOADING", loading: true });
     try {
-      const rootFolders = await withRetry(
-        () => withTimeout(
-          fetchRootFolders(),
-          REFRESH_TIMEOUT_MS,
-          "Loading timed out. Check your connection and try again."
-        ),
-        { maxAttempts: 3, baseDelayMs: 2000 }
+      const rootFolders = await withTimeout(
+        fetchRootFolders(),
+        REFRESH_TIMEOUT_MS,
+        "Loading timed out. Check your connection and try again."
       );
       dispatch({ type: "SET_ROOT_FOLDERS", rootFolders });
-      dispatch({ type: "SET_ERROR", error: null });  // Clear error on success
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       dispatch({ type: "SET_ERROR", error: err.message });
-    } finally {
-      dispatch({ type: "SET_LOADING", loading: false });
     }
   }, []);
+
   const loadedFolderIdsRef = React.useRef(state.loadedFolderIds);
   loadedFolderIdsRef.current = state.loadedFolderIds;
 
@@ -338,16 +330,12 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
 
     inFlightFolderIdsRef.current.add(folderId);
     try {
-      const { folders, files } = await withRetry(
-        () => withTimeout(
-          fetchFolderChildren(folderId),
-          FOLDER_LOAD_TIMEOUT_MS,
-          "Folder load timed out. Check your connection and try again."
-        ),
-        { maxAttempts: 2, baseDelayMs: 1500 } 
+      const { folders, files } = await withTimeout(
+        fetchFolderChildren(folderId),
+        FOLDER_LOAD_TIMEOUT_MS,
+        "Folder load timed out. Check your connection and try again."
       );
       dispatch({ type: "SET_FOLDER_CHILDREN", folderId, folders, files });
-      dispatch({ type: "SET_ERROR", error: null }); 
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       dispatch({ type: "SET_ERROR", error: err.message });
@@ -356,85 +344,52 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Use ref for refresh to avoid stale closures in visibility handler
+  // Stable ref for refresh to avoid stale closures
   const refreshRef = React.useRef(refresh);
   refreshRef.current = refresh;
 
-  // Track upload abort controller via ref to avoid stale closures
-  const uploadAbortControllerRef = React.useRef<AbortController | null>(null);
+  // Ref for upload abort controller
+  const uploadAbortRef = React.useRef<AbortController | null>(null);
   React.useEffect(() => {
-    uploadAbortControllerRef.current = state.upload?.abortController ?? null;
+    uploadAbortRef.current = state.upload?.abortController ?? null;
   }, [state.upload?.abortController]);
 
-  // Track if we're currently refreshing to prevent duplicate calls
+  // Guard against concurrent refreshes
   const isRefreshingRef = React.useRef(false);
 
+  // Initial data load — once on mount
   React.useEffect(() => {
-    // Initialize data room on mount only
     let mounted = true;
-    
-    const doInitialRefresh = async () => {
+    const init = async () => {
       if (!mounted || isRefreshingRef.current) return;
       isRefreshingRef.current = true;
-      try {
-        await refreshRef.current();
-      } finally {
-        isRefreshingRef.current = false;
-      }
+      try { await refreshRef.current(); } finally { isRefreshingRef.current = false; }
     };
-    
-    doInitialRefresh();
-    
-    return () => {
-      mounted = false;
-    };
+    init();
+    return () => { mounted = false; };
   }, []);
 
+  // Visibility change handler — refresh data after idle
   React.useEffect(() => {
     let hiddenAt: number | null = null;
-    const MIN_IDLE_MS = 60_000; // 1 minute
-    const MAX_IDLE_MS = 30 * 60_000; // 30 minutes - if idle this long, do a hard refresh
-    
+    const MIN_IDLE_MS = 60_000; // Only refresh after 1+ min idle
+
     const handleVisibility = async () => {
       if (document.visibilityState === "hidden") {
         hiddenAt = Date.now();
-        // Cancel any in-flight uploads when tab becomes hidden (using ref for current value)
-        if (uploadAbortControllerRef.current) {
-          uploadAbortControllerRef.current.abort();
-        }
+        // Abort uploads when tab hidden
+        uploadAbortRef.current?.abort();
       } else if (document.visibilityState === "visible" && hiddenAt !== null) {
         const idleTime = Date.now() - hiddenAt;
         hiddenAt = null;
-        
-        if (idleTime >= MIN_IDLE_MS) {
-          // Prevent duplicate refreshes
-          if (isRefreshingRef.current) {
-            return;
-          }
-          
-          // For very long idle periods, session may be stale - let Next.js handle auth
-          if (idleTime >= MAX_IDLE_MS) {
-            // Just refresh data, don't call router.refresh() as it can cause remount loops
-            isRefreshingRef.current = true;
-            try {
-              await refreshRef.current();
-            } finally {
-              isRefreshingRef.current = false;
-            }
-            return;
-          }
-          
-          // For moderate idle periods, just refresh data
+
+        if (idleTime >= MIN_IDLE_MS && !isRefreshingRef.current) {
           isRefreshingRef.current = true;
-          try {
-            await refreshRef.current();
-          } finally {
-            isRefreshingRef.current = false;
-          }
+          try { await refreshRef.current(); } finally { isRefreshingRef.current = false; }
         }
       }
     };
-    
+
     document.addEventListener("visibilitychange", handleVisibility);
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
