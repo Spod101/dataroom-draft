@@ -24,6 +24,7 @@ import {
 import { withTimeout } from "@/lib/retry-utils";
 import { getUniqueFileName, preserveExtensionOnRename } from "@/lib/dataroom-utils";
 import { useAuth } from "@/contexts/auth-context";
+import { supabase } from "@/lib/supabase";
 
 export type DataRoomState = {
   rootFolders: DataRoomFolder[];
@@ -412,7 +413,15 @@ export function DataRoomProvider({ children }: { children: React.ReactNode }) {
 
         if (idleTime >= MIN_IDLE_MS && !isRefreshingRef.current) {
           isRefreshingRef.current = true;
-          try { await refreshRef.current(); } finally { isRefreshingRef.current = false; }
+          try {
+            // Explicitly refresh the auth token FIRST before fetching data.
+            // After idle the JWT may be expired; if we skip this, the data fetch
+            // fires against an invalid token and gets aborted internally by Supabase.
+            await supabase.auth.refreshSession();
+            await refreshRef.current();
+          } finally {
+            isRefreshingRef.current = false;
+          }
         }
       }
     };

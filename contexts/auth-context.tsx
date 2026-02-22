@@ -64,10 +64,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     async function initAuth() {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
+        let { data: { session }, error } = await supabase.auth.getSession();
 
         if (error) {
           console.error('[Auth] getSession error:', error);
+        }
+
+        // If no active session, try refreshing once — the token may be expired
+        // but still refreshable (common after idle). Without this, a page reload
+        // after idle incorrectly redirects to /login.
+        if (!session) {
+          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+          if (!refreshError && refreshData.session) {
+            session = refreshData.session;
+          }
         }
 
         if (cancelled) return;
